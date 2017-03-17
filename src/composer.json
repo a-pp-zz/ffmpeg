@@ -1,0 +1,26 @@
+{
+    "name": "appzz/video-converter",
+    "description": "Video converter tools wrapper ffmpeg, ffprobe",
+    "type": "library",
+    "version": "1.0.0",
+    "keywords": [
+        "ffmpeg",
+        "ffprobe"
+    ],
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "CoolSwitcher",
+            "email": "ds@appzz.tech",
+            "role": "lead"
+        }
+    ],
+    "require": {
+        "php": ">=5.4",
+        "appzz/filesystem": "dev-master",
+        "appzz/arr": "dev-master"
+    },
+    "autoload": {
+        "psr-4": {"AppZz\\VideoConverter\\": "src/"}
+    }
+}
