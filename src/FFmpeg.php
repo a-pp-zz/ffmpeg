@@ -57,11 +57,13 @@ class FFmpeg {
 	 * @var array
 	 */
 	private $_allowed_setters = array (
-		'vcodec', 'acodec', 'scodec', 'width', 'size',
-		'format', 'fps', 'vb', 'ab', 'ar', 'ac',		
+		'vcodec', 'acodec', 'scodec',
+		'width', 'size', 'format', 'fps',
+		'vb', 'ab', 'ar', 'ac',		
 		'experimental', 'debug', 'log_dir', 
 		'output_dir', 'overwrite', 'crf', 'preset',
-		'pix_fmt', 'progress', 'mapping', 'passed_streams', 'prefix'
+		'pix_fmt', 'progress', 'mapping',
+		'passed_streams', 'prefix'
 	);
 
 	/**
@@ -69,6 +71,18 @@ class FFmpeg {
 	 * @var resource
 	 */
 	private $_logfile;
+
+	/**
+	 * Formatted cli command to execute
+	 * @var string
+	 */
+	private $_cmd;
+
+	/**
+	 * Need  transcode?
+	 * @var boolean
+	 */
+	private $_need_transcode = FALSE;
 
 	public function __construct ($input = NULL)
 	{		
@@ -215,6 +229,15 @@ class FFmpeg {
 	}
 
 	/**
+	 * get cmd
+	 * @return mixed
+	 */
+	public function get_cmd () 
+	{
+		return $this->_cmd;
+	}
+
+	/**
 	 * calculate corect size by dar
 	 */
 	public function set_size_by_dar ()
@@ -249,13 +272,13 @@ class FFmpeg {
 	}	
 
 	/**
-	 * Transcode videofile
+	 * Prepare params
 	 * @param  array   $streams_needed streams to transcode
-	 * @param  integer $max_streams    [description]
-	 * @param  [type]  $language       [description]
-	 * @return [type]                  [description]
+	 * @param  integer $max_streams
+	 * @param  string $language if specified, keeps streams with speciefied language (work if lang correctly specified in streams)
+	 * @return $this
 	 */
-	public function transcode ($streams_needed = array ('video', 'audio', 'subtitle'), $max_streams = 1, $language = NULL)
+	public function prepare ($streams_needed = array ('video', 'audio', 'subtitle'), $max_streams = 1, $language = NULL)
 	{
 		if ( ! $this->_input)
 			throw new FFprobeException ('No input file!');
@@ -278,7 +301,6 @@ class FFmpeg {
 		$passed = $this->get_param ('passed_streams');
 		$passed = (array) $passed;		
 		$mapping = $this->get_param ('mapping');
-		$progress = $this->get_param ('progress');
 
 		foreach ($this->_metadata['streams'] as $stream_type=>$stream) {
 
@@ -298,7 +320,8 @@ class FFmpeg {
 							continue;
 
 					$try_transcode = ( empty ($language) OR sizeof ($lang_streams) === 0 OR $stream_type == 'video' ) ? TRUE : FALSE;
-					if ( $stream_type == 'subtitle' OR ! in_array (Arr::get ($stream_data, 'codec_name'), $passed ) ) {
+					
+					if ($stream_type == 'subtitle' OR ! in_array (Arr::get ($stream_data, 'codec_name'), $passed)) {
 						$transcoded[$stream_type] = ++$current_stream_counter;
 					}
 					else {
@@ -317,23 +340,24 @@ class FFmpeg {
 			}
 		}
 
-		/*
-			Дорожки не нуждаются в перекодировании
-		 */
-		if ( $transcoded['video'] == 0 AND $transcoded['audio'] == 0 ) {
-			return -1;
+		if ($transcoded['video'] == 0 AND $transcoded['audio'] == 0) {
+			$this->_need_transcode = FALSE;
+			$this->_cmd = FALSE;
+			return $this;
 		}
 
+		$this->_need_transcode = TRUE;
+
 		$params_array[] = sprintf ("-i %s", escapeshellarg ($this->_input));
-		
+
 		if (($pix_fmt = $this->get_param('pix_fmt'))) {
 			$params_array[] = sprintf ("-pix_fmt %s", $pix_fmt);
-		}
+		}		
 
 		if (($watermark = $this->get_param('watermark')) !== FALSE) {
 			$params_array[]   = sprintf ("-i %s", escapeshellarg ($watermark->file) );
 			$filter_complex[] = sprintf ("%s", $watermark->overlay);
-		}
+		}		
 		
 		if (sizeof ($maps_array) > 0)
 			$params_array[] = '-map 0:' . implode (' -map 0:', $maps_array );
@@ -341,7 +365,7 @@ class FFmpeg {
 		if (sizeof ($params_transcode) > 0)
 			$params_array[] = implode (' ', $params_transcode);
 
-		if ($transcoded['video'] >=1) {			
+		if ($transcoded['video']>=1) {			
 			$crf = $this->get_param ('crf');
 			$preset = $this->get_param ('preset');
 			$fps = $this->get_param ('fps');
@@ -365,19 +389,18 @@ class FFmpeg {
 			
 			if ($size) {
 				$params_array[] = '-s ' . $size;
+				$filter_complex[] = sprintf ("scale=%s", $size);
+			} elseif ($width) {
+				$filter_complex[] = sprintf ("scale=%d:%d", $width, -1);
 			}
 			
 			if ($this->get_param ('faststart')) {			
 				$params_array[] = '-movflags faststart';			
-			}	
-			
-			if ($width) {
-				$filter_complex[] = sprintf ("scale=%d:%d", $width, -1);
-			}
+			}				
 		}
 
 		if ( !empty ($filter_complex) ) {
-			$params_array[] = sprintf ("-filter_complex %s", escapeshellarg(implode (',', array_reverse($filter_complex))) );			
+			$params_array[] = sprintf ("-filter_complex %s", escapeshellarg(implode (',', array_reverse($filter_complex))) );
 		}
 
 		if ($transcoded['audio']>=1) {
@@ -395,14 +418,28 @@ class FFmpeg {
 		$params_array[] = sprintf ( "-f %s", $this->get_param('format') );
 		$params_array[] = escapeshellarg ($this->_output);
 
-		$cmd = FFmpeg::$binary . ' ' . implode (' ', $params_array);
+		$this->_cmd = FFmpeg::$binary . ' ' . implode (' ', $params_array);
+		return $this;
+	}
+
+	/**
+	 * Run transcoding
+	 * @return bool
+	 */
+	public function transcode ()
+	{
+		$progress = $this->get_param ('progress');
+
+		if ( ! $this->_need_transcode)
+			return FALSE;
 
 		$logfile = $this->_set_log_file();
 
 		if ($progress) {
 			$this->_set_log_file();
 			$this->_call_trigger('Converting', 'start');
-			$process = Process::factory($cmd, Process::STDERR)
+			
+			$process = Process::factory($this->_cmd, Process::STDERR)
 							->trigger('all', array($this, 'get_progress'))
 							->run();
 
@@ -413,18 +450,19 @@ class FFmpeg {
 			}
 			
 			if ($exitcode === 0) {
+				
 				if ($logfile) {
-					unlink ($logfile);
+					@unlink ($logfile);
 				}
+				
 				$this->_call_trigger('Finished', 'finish');
 			} else {
 				$this->_call_trigger('Error', 'error');
 			}
-
 		} else {
 			
 			if ($logfile) {
-				$cmd .= sprintf (' 2> %s', escapeshellarg($logfile));
+				$cmd = $this->_cmd . ' ' . sprintf ('2> %s', escapeshellarg($logfile));
 			}			
 			
 			system ($cmd, $exitcode);
@@ -434,9 +472,14 @@ class FFmpeg {
 				unlink ($logfile);			
 		}
 
-		return $exitcode === 0 ? TRUE : FALSE;
+		return $exitcode === 0 ? TRUE : FALSE;		
 	}
 
+	/**
+	 * get output from pipe, calc progress and call trigger
+	 * @param  mixed $data
+	 * @return bool
+	 */
 	public function get_progress ($data)
 	{		
 		$duration = Arr::get($this->_metadata, 'duration', 0);
@@ -491,7 +534,21 @@ class FFmpeg {
 			throw new FFmpegException ('Screenshot not created');
 		
 		return TRUE;
-	}		
+	}
+
+	public static function take_screenshot ($input, $ss = 0, $size = 0, $output = FALSE, $output_dir = FALSE)
+	{
+		$f = FFmpeg::factory()
+				->input($input);
+
+		if ($output)
+			$f->output($output);
+
+		if ($output_dir)
+			$f->set_output_dir($output_dir);					
+
+		return $f->screenshot ($ss, $size);
+	}				
 
 	private function _set_param ($param, $value = '')
 	{
@@ -580,18 +637,5 @@ class FFmpeg {
 			
 			call_user_func($this->_trigger, $data);			
 		}		
-	}
-
-	public static function take_screenshot ($input, $ss = 0, $size = 0, $output = FALSE, $output_dir = FALSE) {
-		$f = FFmpeg::factory()
-				->input($input);
-
-		if ($output)
-			$f->output($output);
-
-		if ($output_dir)
-			$f->set_output_dir($output_dir);					
-
-		return $f->screenshot ($ss, $size);
-	}			
+	}		
 }
