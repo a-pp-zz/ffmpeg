@@ -18,7 +18,8 @@
     "require": {
         "php": ">=5.4",
         "appzz/filesystem": "dev-master",
-        "appzz/arr": "dev-master"
+        "appzz/arr": "dev-master",
+        "appzz/process": "dev-master",
     },
     "autoload": {
         "psr-4": {"AppZz\\VideoConverter\\": "src/"}
