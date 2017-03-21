@@ -155,7 +155,7 @@ class FFmpeg {
 			$this->_metadata = FFprobe::factory($this->_input)->probe (TRUE);
 			
 			if (empty ($this->_metadata)) 
-				throw new FFprobeException ('Error get metadata from file!');
+				throw new FFmpegException ('Error get metadata from file!');
 
 			unset ($this->_output);		
 			return $this;
@@ -281,7 +281,7 @@ class FFmpeg {
 	public function prepare ($streams_needed = array ('video', 'audio', 'subtitle'), $max_streams = 1, $language = NULL)
 	{
 		if ( ! $this->_input)
-			throw new FFprobeException ('No input file!');
+			throw new FFmpegException ('No input file!');
 
 		$this->_set_output_by_format ('video');
 
@@ -289,7 +289,7 @@ class FFmpeg {
 		$streams = Arr::get($this->_metadata, 'streams');
 
 		if (empty ($streams))
-			throw new FFprobeException ('Streams not found in file!');	
+			throw new FFmpegException ('Streams not found in file!');	
 
 		$lang_streams     = Arr::path ($this->_metadata, 'languages.' . $language, '.', array ());		
 		$stream_counter   = 0;
@@ -614,7 +614,7 @@ class FFmpeg {
 		if ($debug AND $log_dir)
 		{
 			if ( ! is_writable($log_dir))
-				throw new FFprobeException ('Logdir not writeable');		
+				throw new FFmpegException ('Logdir not writeable');		
 
 			$logfile = $log_dir . DIRECTORY_SEPARATOR . pathinfo ($this->_input, PATHINFO_FILENAME)  . '.log';
 			$this->_logfile = fopen ($logfile, 'wb');
