@@ -500,7 +500,7 @@ class FFmpeg {
 				return 0;			
 			$h = $m = $s = 0;
 			list($h, $m, $s) = explode(':', $current_duration); 
-			$time = $h*360 + $m*60 + $s;
+			$time = $h*3600 + $m*60 + $s;
 			$progress  = $time / max ($duration, 0.01);
 			$progress  = (int) ($progress * 100);
 			$this->_call_trigger($progress, 'progress');
