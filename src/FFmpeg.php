@@ -278,7 +278,7 @@ class FFmpeg {
 	 * @param  string $language if specified, keeps streams with speciefied language (work if lang correctly specified in streams)
 	 * @return $this
 	 */
-	public function prepare ($streams_needed = array ('video', 'audio', 'subtitle'), $max_streams = 1, $language = NULL)
+	public function prepare ($streams_needed = array ('video', 'audio', 'subtitle'), $max_streams = 1, $langs = [])
 	{
 		if ( ! $this->_input)
 			throw new FFmpegException ('No input file!');
@@ -291,22 +291,28 @@ class FFmpeg {
 		if (empty ($streams))
 			throw new FFmpegException ('Streams not found in file!');	
 
-		$lang_streams     = Arr::path ($this->_metadata, 'languages.' . $language, '.', array ());		
 		$stream_counter   = 0;
 		$params_transcode = array ();
 		$params_array     = array ();
 		$maps_array       = array ();
 		$filter_complex   = array ();
-		$audio_stream_exist = FALSE;
 		$passed = $this->get_param ('passed_streams');
 		$passed = (array) $passed;		
 		$mapping = $this->get_param ('mapping');
+		$vcodec = $acodec = FALSE;
+		$cur_stream_type = NULL;
+		$wm = FALSE;
 
 		foreach ($this->_metadata['streams'] as $stream_type=>$stream) {
 
 			if ( ! in_array ($stream_type, $streams_needed)) {
 				continue;
 			}	
+
+			if ($cur_stream_type != $stream_type)			
+				$stream_counter = 0;
+
+			$cur_stream_type = $stream_type;
 
 			$stream_type_alpha = substr ($stream_type, 0, 1); 			
 			$codec  = $this->get_param ($stream_type_alpha.'codec');
@@ -317,9 +323,7 @@ class FFmpeg {
 					$current_stream_counter = Arr::get($transcoded, $stream_type, 0);
 
 					if ($current_stream_counter === $max_streams)
-							continue;
-
-					$try_transcode = ( empty ($language) OR sizeof ($lang_streams) === 0 OR $stream_type == 'video' ) ? TRUE : FALSE;
+						continue;
 					
 					if ($stream_type == 'subtitle' OR ! in_array (Arr::get ($stream_data, 'codec_name'), $passed)) {
 						$transcoded[$stream_type] = ++$current_stream_counter;
@@ -327,11 +331,29 @@ class FFmpeg {
 					else {
 						$codec = 'copy';
 					}
-					
-					if ($try_transcode === TRUE OR in_array ($stream_index, $lang_streams)) {
-						$params_transcode[] = sprintf ("-c:%s:%d %s", substr ($stream_type, 0, 1), $stream_counter, $codec);
-						$maps_array[]       = $stream_counter;							
+
+					$stream_lang  = Arr::get($stream_data, 'language');
+					$stream_index = Arr::get($stream_data, 'index', 0);
+
+					$params_transcode[] = sprintf ("-c:%s:%d %s", substr ($stream_type, 0, 1), $stream_counter, $codec);
+
+					if ($stream_type != 'video') {
+						if ($stream_lang AND in_array($stream_lang, $langs)) {
+							$maps_array[] = $stream_index;	
+							$stream_counter++;
+						} else {
+							$maps_array[] = $stream_index;	
+							$stream_counter++;							
+						}						
+
+						if ($stream_type == 'audio' AND ! $acodec AND $codec != 'copy')
+							$acodec = TRUE;
+
+					} else {
+						$maps_array[] = $stream_index;
 						$stream_counter++;
+						if ( ! $vcodec AND $codec != 'copy')
+							$vcodec = TRUE;
 					}
 				}
 			} else {
@@ -350,22 +372,30 @@ class FFmpeg {
 
 		$params_array[] = sprintf ("-i %s", escapeshellarg ($this->_input));
 
-		if (($pix_fmt = $this->get_param('pix_fmt'))) {
+		if ($vcodec AND ($pix_fmt = $this->get_param('pix_fmt'))) {
 			$params_array[] = sprintf ("-pix_fmt %s", $pix_fmt);
 		}		
 
 		if (($watermark = $this->get_param('watermark')) !== FALSE) {
 			$params_array[]   = sprintf ("-i %s", escapeshellarg ($watermark->file) );
 			$filter_complex[] = sprintf ("%s", $watermark->overlay);
+			$wm = TRUE;
 		}		
+
+		//print_r ($maps_array);
 		
-		if (sizeof ($maps_array) > 0)
-			$params_array[] = '-map 0:' . implode (' -map 0:', $maps_array );
+		if (sizeof ($maps_array) > 0) {
+			$map_str = '-map 0:' . implode (' -map 0:', $maps_array);
+			if ($wm) {
+				$map_str .= ' -map 1:0';
+			}
+			$params_array[] = $map_str;
+		}
 
 		if (sizeof ($params_transcode) > 0)
 			$params_array[] = implode (' ', $params_transcode);
 
-		if ($transcoded['video']>=1) {			
+		if ($vcodec AND $transcoded['video'] >= 1) {			
 			$crf = $this->get_param ('crf');
 			$preset = $this->get_param ('preset');
 			$fps = $this->get_param ('fps');
@@ -403,8 +433,8 @@ class FFmpeg {
 			$params_array[] = sprintf ("-filter_complex %s", escapeshellarg(implode (',', array_reverse($filter_complex))) );
 		}
 
-		if ($transcoded['audio']>=1) {
-			$params_array[] = sprintf ( "-b:a %s -ar %d -ac %d", $this->get_param ('ab'), $this->get_param ('ar'), $this->get_param ('ac') );	
+		if ($acodec AND $transcoded['audio'] >= 1) {
+			$params_array[] = sprintf ("-b:a %s -ar %d -ac %d", $this->get_param ('ab'), $this->get_param ('ar'), $this->get_param ('ac'));	
 		}
 
 		if ($this->get_param ('overwrite')) {
@@ -415,7 +445,11 @@ class FFmpeg {
 			$params_array[] = '-strict experimental';			
 		}
 
-		$params_array[] = sprintf ( "-f %s", $this->get_param('format') );
+		$fmt = $this->get_param('format');
+
+		if ( !empty ($fmt = $this->get_param('format')))
+			$params_array[] = sprintf ("-f %s", $fmt);
+		
 		$params_array[] = escapeshellarg ($this->_output);
 
 		$this->_cmd = FFmpeg::$binary . ' ' . implode (' ', $params_array);
