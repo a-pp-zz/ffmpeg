@@ -1,4 +1,4 @@
 <?php
 namespace AppZz\VideoConverter\Exceptions;
 
-class FFprobeException extends \Exception {}
+class MediainfoException extends \Exception {}
