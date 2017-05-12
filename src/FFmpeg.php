@@ -55,7 +55,7 @@ class FFmpeg {
 		'passed_streams' =>FALSE,
 		'vb'             =>'2000k',
 		'fps'            =>0,
-		'format'         =>'mp4',
+		'format'         =>NULL,
 		'ab'             =>'96k',
 		'ar'             =>'44100',
 		'ac'             =>2,
@@ -210,21 +210,24 @@ class FFmpeg {
 	 */
 	public function watermark ($file = NULL, $align = 'bottom-right', $margins = array (0, 0))
 	{
+		$margins = (array) $margins;
+		$m0 = Arr::get($margins, 0, 0);
+		$m1 = Arr::get($margins, 1, 0);
 		$overlay = 'overlay=';
 		
 		switch ($align) {
 			case 'top-left':
-				$overlay .= abs ($margins[0]) . ':' . abs ($margins[1]);
+				$overlay .= abs ($m0) . ':' . abs ($m1);
 			break;			
 			case 'top-right':
-				$overlay .= 'main_w-overlay_w-' . $margins[0] . ':' . abs ($margins[1]);
+				$overlay .= 'main_w-overlay_w-' . $m0 . ':' . abs ($m1);
 			break;	
 			case 'bottom-left':
-				$overlay .= abs ($margins[0]) . ':' . 'main_h-overlay_h-' . abs ($margins[1]);
+				$overlay .= abs ($m0) . ':' . 'main_h-overlay_h-' . abs ($m1);
 			break;			
 			case 'bottom-right':
 			default:
-				$overlay .= 'main_w-overlay_w-' . abs ($margins[0]) . ':' . 'main_h-overlay_h-' . abs ($margins[1]);
+				$overlay .= 'main_w-overlay_w-' . abs ($m0) . ':' . 'main_h-overlay_h-' . abs ($m1);
 			break;										
 		}
 		
@@ -261,26 +264,24 @@ class FFmpeg {
 		return $this->_cmd;
 	}
 
-	public function get_info ($filtered = TRUE) 
+	public function get_info ($stream_type = NULL) 
 	{
-		if ($filtered === TRUE AND ! empty ($this->_info)) {
-			foreach ($this->_info as $stream_type=>&$info) {
-				$info = array_unique($info);		
-			}
+		if ($stream_type) {
+			return Arr::get($this->_info, $stream_type);
 		}		
 
 		return $this->_info;
 	}	
 
 	/**
-	 * calculate corect size by dar
+	 * calculate correct size by dar
 	 */
 	public function set_size_by_dar ()
 	{
-		$width = $this->get_param ('width');
+		$width       = $this->get_param ('width');
 		$width_meta  = (int) Arr::get ($this->_metadata, 'width', 0);
 		$height_meta = (int) Arr::get ($this->_metadata, 'height', 0);
-		$dar = Arr::get ($this->_metadata, 'dar_num');
+		$dar         = Arr::get ($this->_metadata, 'dar_num');
 
 		if ( ! $dar) {
 			$dar = $width_meta / $height_meta;
@@ -528,7 +529,7 @@ class FFmpeg {
 	 * Run transcoding
 	 * @return bool
 	 */
-	public function transcode ()
+	public function run ()
 	{
 		$progress = $this->get_param ('progress');
 
@@ -625,14 +626,35 @@ class FFmpeg {
 		$this->_set_output_by_format('image');
 
 		$scale = intval ($size) > 0 ? ' -vf scale='.$size.':-1' : '';
-		$cmd   = sprintf('%s -loglevel quiet -ss %s -i %s -y -t 0.001 -vframes 1 -an -y -f image2%s %s', FFmpeg::$binary, number_format ($ss, 2, '.', ''), escapeshellarg($this->_input), $scale, escapeshellarg($this->_output));
+		$this->_cmd   = sprintf('%s -loglevel quiet -ss %s -i %s -y -t 0.001 -vframes 1 -an -y -f image2%s %s', FFmpeg::$binary, number_format ($ss, 2, '.', ''), escapeshellarg($this->_input), $scale, escapeshellarg($this->_output));
+		
+		return $this;
+	}
 
-		system ($cmd, $ret);
-		
-		if (intval($ret) !== 0)
-			throw new FFmpegException ('Screenshot not created');
-		
-		return TRUE;
+	/**
+	 * trim video
+	 * @param  mixed $from
+	 * @param  mixed $to
+	 * @param  boolean $interval
+	 * @return $this
+	 */
+	public function trim ($from = 0, $to = 30, $interval = TRUE) 
+	{
+		$this->_set_output_by_format('video');
+
+		$params[] = FFmpeg::$binary;
+		$params[] = '-ss ' . $from;
+		$params[] = ($interval ? '-to' : '-t') . ' ' . $to;
+		$params[] = '-i ' . escapeshellarg($this->_input);		
+		$params[] = '-map 0 -c copy';
+
+		if ($this->get_param('overwrite'))
+			$params[] = '-y';
+
+		$params[] = escapeshellarg($this->_output);
+
+		$this->_cmd = implode (' ', $params);
+		return $this;
 	}
 
 	public static function take_screenshot ($input, $ss = 0, $size = 0, $output = FALSE, $output_dir = FALSE)
@@ -711,7 +733,11 @@ class FFmpeg {
 		}
 		else {
 			$this->_set_output();
-			$this->_output = Filesystem::new_extension ($this->_output, $this->get_param('format'));				
+			$format = $this->get_param('format');
+			
+			if ($format)
+				$this->_output = Filesystem::new_extension ($this->_output, $this->get_param('format'));				
+			
 			$prefix = $this->get_param('prefix');
 			
 			if ( ! empty ($prefix))
@@ -776,5 +802,34 @@ class FFmpeg {
 	    $size = array('bps','kbps','mbps');
 	    $factor = floor((strlen($bytes) - 1) / 3);
 	    return sprintf("%.{$decimals}f", $bytes / pow(1000, $factor)) . ' ' . @$size[$factor];
-	}		
+	}	
+
+	private function _to_seconds ($time) {
+		
+		if (is_number ($time))
+			return $time;
+
+		$time_parts = explode (':', $time);
+
+		if ($time_parts) {			
+
+			if (count($time_parts) > 3)
+				return 0;
+			
+			$time_parts = array_map (function ($v) {
+				return sprintf ('%d', $v);
+			}, $time_parts);
+			
+			if (count($time_parts) === 2) {
+				list ($mm, $ss) = $time_parts;
+				$hh = 0;
+			} else {
+				list ($hh, $mm, $ss) = $time_parts;
+			}
+
+			return (3600*$hh) + (60*$mm) + $ss;
+		}
+
+		return 0;
+	}	
 }
