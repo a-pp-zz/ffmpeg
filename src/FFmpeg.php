@@ -6,6 +6,13 @@ use AppZz\VideoConverter\Exceptions\FFmpegException;
 use AppZz\Helpers\Filesystem;
 use AppZz\CLI\Process;
 
+/**
+ * @package FFmpeg
+ * @version 1.1
+ * @author CoolSwitcher
+ * @license MIT
+ * @link https://github.com/a-pp-zz/video-converter
+ */
 class FFmpeg {
 
 	/**
@@ -50,18 +57,20 @@ class FFmpeg {
 		'experimental'   =>TRUE,
 		'passed_streams' =>FALSE,
 		'vb'             =>'2000k',
-		'fps'            =>30,
-		'format'         =>'mp4',
+		'fps'            =>0,
+		'format'         =>NULL,
 		'ab'             =>'96k',
 		'ar'             =>'44100',
 		'ac'             =>2,
 		'pix_fmt'        =>'yuv420p',
-		'langs'			 =>FALSE,
-		'metadata'		 =>FALSE,
-		'streams'	     =>FALSE,
-		'langs' => [
-			'rus' => 'Русский',
-			'eng' => 'Английский',		
+		'langs'          =>FALSE,
+		'metadata'       =>FALSE,
+		'streams'        =>FALSE,
+		'loglevel'       =>FALSE,
+		'extra'          =>'',
+		'langs'          => [
+		'rus'            => 'Русский',
+		'eng'            => 'Английский',		
 		]
 	);
 
@@ -71,11 +80,11 @@ class FFmpeg {
 	 */
 	private $_allowed_setters = array (
 		'vcodec', 'acodec', 'scodec',
-		'width', 'size', 'format', 'fps',
-		'vb', 'ab', 'ar', 'ac',		
-		'experimental', 'debug', 'log_dir', 
+		'width', 'size', 'fps', 'format', 'vframes',
+		'vb', 'ab', 'ar', 'ac', 'to',
+		'experimental', 'debug', 'log_dir', 'streams',
 		'output_dir', 'overwrite', 'crf', 'preset',
-		'pix_fmt', 'progress', 'streams',
+		'pix_fmt', 'progress', 'streams', 'extra',
 		'passed_streams', 'prefix', 'langs', 'metadata'
 	);
 
@@ -110,7 +119,6 @@ class FFmpeg {
 		return new FFmpeg ($input); 
 	}
 
-
 	/**
 	 * set trigger
 	 * @param  \Closure $trigger
@@ -137,11 +145,7 @@ class FFmpeg {
 
 	public function set_stream ($type = 'video', $count = 1, $langs = [])
 	{
-		if ( is_bool($type))
-			$this->_params['streams'] = $type;
-		else
-			$this->_params['streams'][$type] = array ('count'=>intval ($count), 'langs'=>(array) $langs);
-
+		$this->_params['streams'][$type] = array ('count'=>intval ($count), 'langs'=>(array) $langs);
 		return $this;
 	}
 
@@ -159,7 +163,8 @@ class FFmpeg {
 
 			if (in_array($param, $this->_allowed_setters)) {
 				$this->_set_param($param, $value);
-			} else {
+			}
+			else {
 				throw new FFmpegException ('Setting param ' .$param. ' not allowed');
 			}
 		}
@@ -176,6 +181,7 @@ class FFmpeg {
 	{
 		if ( ! empty ($filename) AND is_file ($filename)) {
 			$this->_input = $filename;
+			
 			$this->_metadata = FFprobe::factory($this->_input)->probe (TRUE);
 			
 			if (empty ($this->_metadata)) 
@@ -183,7 +189,8 @@ class FFmpeg {
 
 			unset ($this->_output);		
 			return $this;
-		} else {
+		}
+		else {
 			throw new FFmpegException ('Input file '.$filename.' not exists');
 		}
 	}
@@ -193,13 +200,36 @@ class FFmpeg {
 	 * @param  string $filename
 	 * @return $this
 	 */
-	public function output ($filename)
+	public function output ($filename, $start = FALSE, $end = FALSE)
 	{
-		if (empty ($filename))
-			throw new FFmpegException ('Output file not exists');
-		$this->_output = $filename;
+		if ( ! empty ($filename))
+			$this->_output = $filename;
 		return $this;
-	}	
+	}
+
+	public function loglevel ($loglevel)
+	{
+        $allowed = [
+			'quiet',
+			'panic',
+			'fatal',
+			'error',
+			'warning',
+			'info',
+			'verbose',
+			'debug',
+			'trace',        
+        ];
+
+        if (in_array($loglevel, $allowed)) {
+        	$this->_set_param ('loglevel', $loglevel);
+        }
+        else {
+        	throw new FFmpegException ('Wrong leglevel param');
+        }
+
+        return $this;		
+	}
 
 	/**
 	 * Set watermark param
@@ -210,21 +240,24 @@ class FFmpeg {
 	 */
 	public function watermark ($file = NULL, $align = 'bottom-right', $margins = array (0, 0))
 	{
+		$margins = (array) $margins;
+		$m0 = Arr::get($margins, 0, 0);
+		$m1 = Arr::get($margins, 1, 0);
 		$overlay = 'overlay=';
 		
 		switch ($align) {
 			case 'top-left':
-				$overlay .= abs ($margins[0]) . ':' . abs ($margins[1]);
+				$overlay .= abs ($m0) . ':' . abs ($m1);
 			break;			
 			case 'top-right':
-				$overlay .= 'main_w-overlay_w-' . $margins[0] . ':' . abs ($margins[1]);
+				$overlay .= 'main_w-overlay_w-' . $m0 . ':' . abs ($m1);
 			break;	
 			case 'bottom-left':
-				$overlay .= abs ($margins[0]) . ':' . 'main_h-overlay_h-' . abs ($margins[1]);
+				$overlay .= abs ($m0) . ':' . 'main_h-overlay_h-' . abs ($m1);
 			break;			
 			case 'bottom-right':
 			default:
-				$overlay .= 'main_w-overlay_w-' . abs ($margins[0]) . ':' . 'main_h-overlay_h-' . abs ($margins[1]);
+				$overlay .= 'main_w-overlay_w-' . abs ($m0) . ':' . 'main_h-overlay_h-' . abs ($m1);
 			break;										
 		}
 		
@@ -261,15 +294,24 @@ class FFmpeg {
 		return $this->_cmd;
 	}
 
+	public function get_info ($stream_type = NULL) 
+	{
+		if ($stream_type) {
+			return Arr::get($this->_info, $stream_type);
+		}		
+
+		return $this->_info;
+	}	
+
 	/**
-	 * calculate corect size by dar
+	 * calculate correct size by dar
 	 */
 	public function set_size_by_dar ()
 	{
-		$width = $this->get_param ('width');
+		$width       = $this->get_param ('width');
 		$width_meta  = (int) Arr::get ($this->_metadata, 'width', 0);
 		$height_meta = (int) Arr::get ($this->_metadata, 'height', 0);
-		$dar = Arr::get ($this->_metadata, 'dar_num');
+		$dar         = Arr::get ($this->_metadata, 'dar_num');
 
 		if ( ! $dar) {
 			$dar = $width_meta / $height_meta;
@@ -285,7 +327,7 @@ class FFmpeg {
 			$width  = min (array($width, $width_meta));
 			$height = intval ($width / $dar);
 			
-			if ($height%2 !=0) {
+			if ($height%2 !== 0) {
 				$height++;
 			}
 			
@@ -293,6 +335,31 @@ class FFmpeg {
 		}		
 		
 		$this->_set_param('size', $size);
+		return $this;
+	}	
+
+	/**
+	 * ss param
+	 * @param mixed  $ss
+	 * @param boolean $input
+	 * @return $this
+	 */
+	public function set_ss ($ss, $input = TRUE)
+	{
+		$type = $input ? 'input' : 'output';
+		$this->_set_param('ss_' . $type, $ss);
+		return $this;
+	}
+
+	/**
+	 * t param
+	 * @param mixed  $t
+	 * @param boolean $input
+	 */
+	public function set_t ($t, $input = TRUE)
+	{
+		$type = $input ? 'input' : 'output';
+		$this->_set_param('t_' . $type, $t);
 		return $this;
 	}	
 
@@ -308,7 +375,7 @@ class FFmpeg {
 		if ( ! $this->_input)
 			throw new FFmpegException ('No input file!');
 
-		$this->_set_output_by_format ('video');
+		$this->_set_output_by_format ();
 
 		$streams = Arr::get($this->_metadata, 'streams');
 
@@ -322,44 +389,64 @@ class FFmpeg {
 		$params_cli->map[] = '-map_metadata -1';
 
 		$streams_param = $this->get_param('streams');
-		$langs = $this->get_param('langs');
+		$langs         = $this->get_param('langs');
+		$width         = $this->get_param ('width');
+		$crf           = $this->get_param ('crf');
+		$preset        = $this->get_param ('preset');
+		$fps           = $this->get_param ('fps');		
+		$ss_i          = $this->get_param ('ss_input');
+		$ss_o          = $this->get_param ('ss_output');
+		$to            = $this->get_param ('to');
+		$vframes       = $this->get_param ('vframes');
+		$loglevel      = $this->get_param ('loglevel');
+		$metadata      = $this->get_param ('metadata');
+
+		if ( ! $fps)
+			$fps = Arr::get ($this->_metadata, 'fps', 30);	
+
+		if ($width)
+			$this->set_size_by_dar();
+
+		$size = $this->get_param ('size');
+
+		if ($vframes) {
+			$params_cli->transcode[] = sprintf ('-vframes %d', $vframes);	
+		}		
+
+		if ($loglevel) {
+			$params_cli->input[] = "-loglevel {$loglevel}";
+		}		
+
+		if ($ss_i !== FALSE) {
+			$ss_i = $this->_check_time($ss_i);
+			$params_cli->input[] = "-ss {$ss_i}";
+		}		
 
 		$params_cli->input[] = sprintf ("-i %s", escapeshellarg ($this->_input));
 		
-		if (($watermark = $this->get_param('watermark')) !== FALSE) {
-			$params_cli->input[] = sprintf ("-i %s", escapeshellarg ($watermark->file) );
+		if ($this->get_param('vcodec') != 'copy' AND ($watermark = $this->get_param('watermark')) !== FALSE) {
+			$params_cli->input[]  = sprintf ("-i %s", escapeshellarg ($watermark->file) );
 			$params_cli->filter[] = sprintf ("%s", $watermark->overlay);
-			$params_cli->map[] = '-map 1';
-		}
+			$params_cli->map[]    = '-map 1';
+		}		
 
 		if ( ! is_array ($streams_param)) {
 			$params_cli->transcode[] = sprintf ('-c:v %s -c:a %s -c:s %s', $this->get_param('vcodec'), $this->get_param('acodec'), $this->get_param('scodec'));
-			$vcodec_activated = $acodec_activated = TRUE;
+			$params_cli->map[] = '-map 0';
+
+			if ($this->get_param('acodec') != 'copy')
+				$acodec_activated = TRUE;
 			
-			if ($streams_param === TRUE) {
-				$params_cli->map[] = '-map 0';
-			}
-		} else {
-
-			#print_r ($streams);
-			#exit;
-
+			if ($this->get_param('vcodec') != 'copy')
+				$vcodec_activated = TRUE;			
+		}
+		else {
 			foreach ($streams as $stream_type=>$stream) {
 
-				$stream_counter = 0;
-
-				//$cur_stream_type = $stream_type;				
+				$stream_counter = 0;		
 
 				$cur_stream_langs = (array) Arr::path($streams_param, $stream_type . '.langs', '.', []);
 				$cur_stream_count = Arr::path($streams_param, $stream_type . '.count', '.', 0);
-
-				#echo $stream_type . $stream_counter, PHP_EOL;
-				#echo $cur_stream_count, PHP_EOL;				
-
-				#if ($cur_stream_count === 0 OR ($stream_counter >= $cur_stream_count)) {
-					//echo 'dddddddddd';
-					#continue;
-				#}
 
 				if ( ! isset ($streams_param[$stream_type])) {
 					continue;
@@ -374,7 +461,7 @@ class FFmpeg {
 				}
 
 				if ($cur_stream_count) {
-					foreach ($stream as $stream_index=>$stream_data) {	
+					foreach ($stream as $index=>$stream_data) {	
 
 						if ($stream_counter === $cur_stream_count) {
 							break;
@@ -386,7 +473,6 @@ class FFmpeg {
 						$full_lang = Arr::get($langs, $stream_lang, $stream_lang);	
 						
 						if ( ! in_array (Arr::get ($stream_data, 'codec_name'), $passed)) {
-							//$transcoded[$stream_type] = ++$current_stream_counter;
 							$codec = $def_codec;
 							$bitrate = $def_bitrate;
 							$codec_name = $codec;
@@ -415,9 +501,12 @@ class FFmpeg {
 								$stream_title_new = sprintf ('%s @ %s', mb_convert_case ($full_lang, MB_CASE_TITLE), $codec_name);					
 						}
 						
-						$params_cli->transcode[] = sprintf ('-c:%s:%d %s -metadata:s:%s:%d title="%s" -metadata:s:%s:%d language="%s"', $stream_type_alpha, $stream_counter, $codec, $stream_type_alpha, $stream_counter, escapeshellarg($stream_title_new), $stream_type_alpha, $stream_counter, $stream_lang);
-
-						//print_r ($params_cli->transcode);
+						if ($metadata) {
+							$params_cli->transcode[] = sprintf ('-c:%s:%d %s -metadata:s:%s:%d title="%s" -metadata:s:%s:%d language="%s"', $stream_type_alpha, $stream_counter, $codec, $stream_type_alpha, $stream_counter, escapeshellarg($stream_title_new), $stream_type_alpha, $stream_counter, $stream_lang);							
+						} 
+						else {
+							$params_cli->transcode[] = sprintf ('-c:%s:%d %s', $stream_type_alpha, $stream_counter, $codec);
+						}
 
 						$add_map_stream = TRUE;
 						
@@ -431,7 +520,8 @@ class FFmpeg {
 						if ($add_map_stream) {
 							$params_cli->map[] = sprintf('-map 0:%d', $stream_index);
 							$stream_counter++;
-							$this->_set_info ($stream_type, $stream_index);					
+							$bitrate = ($stream_type == 'video' AND $crf) ? 'crf ' . $crf : $bitrate;
+							$this->_set_info ($stream_type, $index, $codec, $bitrate);					
 						}						
 
 						if ($stream_type == 'audio' AND ! $acodec_activated AND $codec != 'copy')
@@ -445,37 +535,29 @@ class FFmpeg {
 		}			
 
 		if ($vcodec_activated AND ($pix_fmt = $this->get_param('pix_fmt'))) {
-			$params_cli->transcode[] = sprintf ("-pix_fmt %s", $pix_fmt);
+			$params_cli->transcode[] = sprintf ('-pix_fmt %s', $pix_fmt);
 		}
 
-		if ($vcodec_activated) {	
-
-			$crf = $this->get_param ('crf');
-			$preset = $this->get_param ('preset');
-			$fps = $this->get_param ('fps');
-			$size = $this->get_param ('size');
-			$width = $this->get_param ('width');
+		if ($vcodec_activated) {		
 			
 			if ($crf) {
-				$params_cli->transcode[] = sprintf ( "-crf %d", $crf);
+				$params_cli->transcode[] = sprintf ('-crf %d', $crf);
 			}
 			else {
-				$params_cli->transcode[] = sprintf ( "-b:v %s", $this->get_param ('vb'));
+				$params_cli->transcode[] = sprintf ('-b:v %s', $this->get_param ('vb'));
 			}
 
 			if ($preset) {
-				$params_cli->transcode[] = sprintf ( "-preset %s", $preset);
+				$params_cli->transcode[] = sprintf ('-preset %s', $preset);
 			}
 			
 			if ($fps) {
-				$params_cli->transcode[] = sprintf ( "-r %d", $fps);			
+				$params_cli->transcode[] = sprintf ('-r %d', $fps);			
 			}
 			
 			if ($size) {
 				$params_cli->transcode[] = sprintf ('-s %s', $size);
-				$params_cli->filter[] = sprintf ("scale=%s", $size);
-			} elseif ($width) {
-				$params_cli->filter[] = sprintf ("scale=%d:%d", $width, -1);
+				$params_cli->filter[] = sprintf ('scale=%s', $size);
 			}
 			
 			if ($this->get_param ('faststart')) {			
@@ -484,7 +566,7 @@ class FFmpeg {
 		}
 
 		if ( ! empty ($params_cli->filter)) {
-			$params_cli->filter = sprintf ("-filter_complex %s", escapeshellarg(implode (',', array_reverse($params_cli->filter))));
+			$params_cli->filter = sprintf ('-filter_complex %s', escapeshellarg(implode (',', array_reverse($params_cli->filter))));
 		}
 
 		if ($acodec_activated) {
@@ -499,10 +581,28 @@ class FFmpeg {
 			$params_cli->output[] = '-strict experimental';			
 		}
 
+		/*
 		$fmt = $this->get_param('format');
 
 		if ( ! empty ($fmt = $this->get_param('format')))
 			$params_cli->output[] = sprintf ("-f %s", $fmt);
+		*/	
+
+		$extra = $this->get_param('extra');
+
+		if ($extra) {
+			$params_cli->transcode[] = $extra;
+		}
+
+		if ($ss_o !== FALSE) {
+			$ss_o = $this->_check_time($ss_o);
+			$params_cli->output[] = "-ss {$ss_o}";
+		}
+
+		if ($to) {
+			$to = $this->_check_time($to);
+			$params_cli->output[] = "-to {$to}";
+		}			
 		
 		$params_cli->output[] = escapeshellarg ($this->_output);
 
@@ -532,10 +632,12 @@ class FFmpeg {
 	 * Run transcoding
 	 * @return bool
 	 */
-	public function transcode ()
+	public function run ()
 	{
-		$progress = $this->get_param ('progress');
+		if (empty($this->_cmd))
+			throw new FFmpegException ('Empty cmdline');			
 
+		$progress = $this->get_param ('progress');
 		$logfile = $this->_set_log_file();
 
 		if ($progress) {
@@ -559,20 +661,23 @@ class FFmpeg {
 				}
 				
 				$this->_call_trigger('Finished', 'finish');
-			} else {
+			}
+			else {
 				$this->_call_trigger('Error', 'error');
 			}
-		} else {
+		}
+		else {
 			
 			if ($logfile) {
-				$cmd = $this->_cmd . ' ' . sprintf ('2> %s', escapeshellarg($logfile));
+				$this->_cmd . ' ' . sprintf ('2> %s', escapeshellarg($logfile));
 			}			
 			
-			system ($cmd, $exitcode);
+			system ($this->_cmd, $exitcode);
 			$exitcode = intval ($exitcode);
 			
-			if ($retval === 0)
-				unlink ($logfile);			
+			if ($exitcode === 0 AND $logfile) {
+				@unlink ($logfile);			
+			}
 		}
 
 		return $exitcode === 0 ? TRUE : FALSE;		
@@ -619,38 +724,48 @@ class FFmpeg {
 		if ( ! $this->_input)
 		{
 			throw new FFmpegException ('No input file');
-		}
-
-		if ($ss < 1 AND $ss > 0)
-		{
-			$ss = Arr::get($this->_metadata, 'duration') * $ss;
 		}		
 
-		$this->_set_output_by_format('image');
+		if (is_numeric ($ss) AND $ss < 1 AND $ss > 0)
+		{
+			$ss = Arr::get($this->_metadata, 'duration') * $ss;
+		}
 
-		$scale = intval ($size) > 0 ? ' -vf scale='.$size.':-1' : '';
-		$cmd   = sprintf('%s -loglevel quiet -ss %s -i %s -y -t 0.001 -vframes 1 -an -y -f image2%s %s', FFmpeg::$binary, number_format ($ss, 2, '.', ''), escapeshellarg($this->_input), $scale, escapeshellarg($this->_output));
+		$scale = intval ($size) > 0 ? sprintf (' -vf scale=%d:-1', $size) : '';
+		$extra = '-an'.$scale;
+	
+		$this->_set_output_by_format();
+		$this->set_stream('video', 0, NULL);
+		$this->set_stream('audio', 0, NULL);
+		$this->set_stream('subtitle', 0, NULL);	
+		$this->set_ss($ss, TRUE);	
+		$this->set_t('0.001', TRUE);
+		$this->set_vframes(1);
+		$this->set_progress(FALSE);
+		$this->set_format('jpg');
+		$this->set_extra($extra);
+		if ( ! $this->get_param('loglevel'))
+			$this->loglevel('quiet');
 
-		system ($cmd, $ret);
-		
-		if (intval($ret) !== 0)
-			throw new FFmpegException ('Screenshot not created');
-		
-		return TRUE;
+		return $this;
 	}
 
-	public static function take_screenshot ($input, $ss = 0, $size = 0, $output = FALSE, $output_dir = FALSE)
+	public static function take_screenshot ($input, $ss = 0, $width = 0, $output = FALSE, $output_dir = FALSE)
 	{
 		$f = FFmpeg::factory()
-				->input($input);
+				->input($input)
+				->set_overwrite(TRUE);
 
 		if ($output)
 			$f->output($output);
 
 		if ($output_dir)
-			$f->set_output_dir($output_dir);					
+			$f->set_output_dir($output_dir);
 
-		return $f->screenshot ($ss, $size);
+		$f->screenshot($ss, $width);
+		$f->prepare();					
+
+		return $f->run();
 	}				
 
 	private function _set_param ($param, $value = '')
@@ -661,24 +776,29 @@ class FFmpeg {
 	}	
 
 	private function _set_info ($stream_type, $stream_index = 0, $codec, $bitrate = 0)
-	{
-		if ($stream_index === 0) {
-			$info_text = sprintf ('%s: %s', mb_convert_case($stream_type, MB_CASE_TITLE), $codec);
+	{		
+		$codec_ori = Arr::path($this->_metadata, 'streams.' . $stream_type . '.' . $stream_index . '.codec_name');
+		
+		if ($stream_type == 'video') {
+			$info_text_tpl = '%dx%d %s => %s %s';
+			$width = Arr::get($this->_metadata, 'width', 0);
+			$height = Arr::get($this->_metadata, 'height', 0);
+			$size = $this->get_param('size');
+			
+			if (empty($size))
+				$size = sprintf ('%dx%d', $width, $height);
 
-			if ($bitrate) {
-				$info_text .= ' @ ' . $bitrate;					
-			}
-
-			$this->_info[] = $info_text;
+			$info_text = ($codec == 'copy') ? trim(sprintf ($info_text_tpl, $width, $height, $codec_ori, $codec, '')) : sprintf ($info_text_tpl, $width, $height, $codec_ori, $size, $codec);
 		} else {
-			if ($stream_type == 'video') {
-				$info_text_tpl = '%s: %dx%d %s =>%dx%d %s';
-				$width = Arr::get($this->_metadata, 'width', 0);
-				$height = Arr::get($this->_metadata, 'height', 0);
-			} else {
-				$info_text_tpl = '%s: %s => %s';
-			}
+			$info_text_tpl = '%s => %s';
+			$info_text = sprintf ($info_text_tpl, $codec_ori, $codec);
 		}
+
+		if ($codec != 'copy' AND $bitrate) {
+			$info_text .= ' @ ' . $bitrate;					
+		}		
+
+		$this->_info[$stream_type][$stream_index] = $info_text;		
 	}
 
 	private function _set_output ()
@@ -701,31 +821,30 @@ class FFmpeg {
 		$this->_output = $output_dir . DIRECTORY_SEPARATOR . basename ($this->_output);
 	}
 
-	private function _set_output_by_format ($format = 'image')
+	private function _set_output_by_format ()
 	{
 		$this->_set_output();
+		$format = $this->get_param('format');		
+				
+		if ($format) {
+			$this->_output = Filesystem::new_extension ($this->_output, $format);				
+		}
 		
-		if ( $format == 'image' ) {
-			$this->_output = Filesystem::new_extension ($this->_output, 'jpg');
-		}
-		else {
-			$this->_set_output();
-			$this->_output = Filesystem::new_extension ($this->_output, $this->get_param('format'));				
-			$prefix = $this->get_param('prefix');
-			
-			if ( ! empty ($prefix))
-			{
-				$this->_output = Filesystem::add_prefix ($this->_output, $prefix);
-			}
-
-			if ($this->get_param('overwrite') !== TRUE OR $this->_output == $this->_input)
-			{
-				$this->_output = Filesystem::check_filename ($this->_output);	
-			}			
+		$prefix = $this->get_param('prefix');
+		
+		if ( ! empty ($prefix))
+		{
+			$this->_output = Filesystem::add_prefix ($this->_output, $prefix);
 		}
 
-		if (file_exists($this->_output) AND ! is_writable($this->_output))
+		if ($this->get_param('overwrite') !== TRUE OR $this->_output == $this->_input)
+		{
+			$this->_output = Filesystem::check_filename ($this->_output);	
+		}			
+
+		if (file_exists($this->_output) AND ! is_writable($this->_output)) {
 			throw new FFmpegException ($this->_output . ' is not writeable');		
+		}
 
 		return $this;
 	}
@@ -775,5 +894,18 @@ class FFmpeg {
 	    $size = array('bps','kbps','mbps');
 	    $factor = floor((strlen($bytes) - 1) / 3);
 	    return sprintf("%.{$decimals}f", $bytes / pow(1000, $factor)) . ' ' . @$size[$factor];
-	}		
+	}
+
+	private function _check_time ($time)
+	{
+		if (is_numeric($time)) {
+			return $time;
+		}
+		elseif (preg_match ('#^(\d{1,2}:)?\d{1,2}:?\d{1,2}$#iu', $time)) {
+			return escapeshellarg($time);
+		}
+		else {
+			throw new FFmpegException ('Wrong time param: '.$time);
+		}
+	}
 }
