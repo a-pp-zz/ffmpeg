@@ -8,7 +8,7 @@ use AppZz\CLI\Process;
 
 /**
  * @package FFmpeg
- * @version 1.2
+ * @version 1.2.2
  * @author CoolSwitcher
  * @license MIT
  * @link https://github.com/a-pp-zz/video-converter
@@ -626,9 +626,11 @@ class FFmpeg {
 			$params_cli->output[] = '-strict experimental';
 		}
 
+		/*
 		if ( ! empty ($fmt = $this->get_param('format'))) {
 			$params_cli->output[] = sprintf ("-f %s", $fmt);
 		}
+		*/
 
 		$extra = $this->get_param('extra');
 
