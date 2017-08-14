@@ -2,7 +2,6 @@
     "name": "appzz/video-converter",
     "description": "Video converter tools wrapper ffmpeg, ffprobe",
     "type": "library",
-    "version": "1.0.0",
     "keywords": [
         "ffmpeg",
         "ffprobe"
@@ -12,7 +11,7 @@
     "authors": [
         {
             "name": "CoolSwitcher",
-            "email": "ds@appzz.tech",
+            "email": "ds@appzz.pw",
             "role": "lead"
         }
     ],
@@ -21,6 +20,7 @@
         "appzz/filesystem": "1.*",
         "appzz/arr": "1.*",
         "appzz/process": "1.*"
+        //"dariuszp/cli-progress-bar": "1.*"
     },
     "autoload": {
         "psr-4": {"AppZz\\VideoConverter\\": "src/"}
