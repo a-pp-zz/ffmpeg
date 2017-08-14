@@ -8,7 +8,7 @@ use AppZz\CLI\Process;
 
 /**
  * @package FFmpeg
- * @version 1.2.2
+ * @version 1.2.3
  * @author CoolSwitcher
  * @license MIT
  * @link https://github.com/a-pp-zz/video-converter
@@ -778,6 +778,7 @@ class FFmpeg {
 		$scale = intval ($size) > 0 ? sprintf (' -vf scale=%d:-1', $size) : '';
 		$extra = '-an'.$scale;
 
+		$this->set_format('jpg');
 		$this->_set_output_by_format();
 		$this->set_stream('video', 0, NULL);
 		$this->set_stream('audio', 0, NULL);
@@ -786,7 +787,6 @@ class FFmpeg {
 		$this->set_t('0.001', TRUE);
 		$this->set_vframes(1);
 		$this->set_progress(FALSE);
-		$this->set_format('jpg');
 		$this->set_extra($extra);
 
 		if ( ! $this->get_param('loglevel')) {
