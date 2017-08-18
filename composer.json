@@ -19,7 +19,8 @@
         "php": ">=5.4",
         "appzz/filesystem": "1.*",
         "appzz/arr": "1.*",
-        "appzz/process": "1.*"
+        "appzz/process": "1.*",
+        "dariuszp/cli-progress-bar": "1.*"
     },
     "autoload": {
         "psr-4": {"AppZz\\VideoConverter\\": "src/"}

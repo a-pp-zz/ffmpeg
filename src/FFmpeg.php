@@ -5,6 +5,8 @@ use AppZz\Helpers\Arr;
 use AppZz\VideoConverter\Exceptions\FFmpegException;
 use AppZz\Helpers\Filesystem;
 use AppZz\CLI\Process;
+use AppZz\CLI\Utils;
+use Dariuszp\CliProgressBar;
 
 /**
  * @package FFmpeg
@@ -50,27 +52,23 @@ class FFmpeg {
 	 * @var array
 	 */
 	private $_default_params = [
-		'debug'          =>FALSE,
-		'log_dir'        =>FALSE,
-		'output_dir'     =>FALSE,
-		'ovewrite'       =>FALSE,
-		'experimental'   =>TRUE,
-		'passed_streams' =>FALSE,
-		'vb'             =>'2000k',
-		'fps'            =>0,
-		'format'         =>NULL,
-		'ab'             =>'96k',
-		'ar'             =>'44100',
-		'ac'             =>2,
-		'pix_fmt'        =>'yuv420p',
-		'metadata'       =>FALSE,
-		'streams'        =>FALSE,
-		'loglevel'       =>'verbose',
-		'extra'          =>'',
-		'langs'          => [
-			'rus'            => 'Russian',
-			'eng'            => 'English',
-		]
+		'debug'        =>FALSE,
+		'log_dir'      =>FALSE,
+		'output_dir'   =>FALSE,
+		'ovewrite'     =>FALSE,
+		'experimental' =>TRUE,
+		'passthrough'  =>FALSE,
+		'vb'           =>'2000k',
+		'fps'          =>0,
+		'format'       =>NULL,
+		'ab'           =>'96k',
+		'ar'           =>'44100',
+		'ac'           =>2,
+		'pix_fmt'      =>'yuv420p',
+		'metadata'     =>FALSE,
+		'streams'      =>FALSE,
+		'loglevel'     =>'info',
+		'extra'        =>''
 	];
 
 	private $_params = [];
@@ -80,13 +78,12 @@ class FFmpeg {
 	 * @var array
 	 */
 	private $_allowed_setters = array (
-		'vcodec', 'acodec', 'scodec', 'stream', 'vn', 'an', 'sn',
+		'vcodec', 'acodec', 'scodec', 'mapping', 'vn', 'an', 'sn',
 		'width', 'size', 'fps', 'format', 'vframes',
 		'vb', 'ab', 'ar', 'ac', 'to', 'ss', 'ss_input', 'ss_output',
-		'experimental', 'debug', 'log_dir', 'output_dir',
-		'overwrite', 'crf', 'preset', 'pix_fmt', 'vn', 'an', 'sn',
-		'progress', 'streams', 'extra', 'watermark', 'scale',
-		'passed_streams', 'prefix', 'langs', 'metadata'
+		'experimental', 'output_dir', 'overwrite', 'crf', 'preset',
+		'pix_fmt', 'vn', 'an', 'sn', 'extra', 'watermark', 'scale',
+		'passthrough', 'prefix', 'metadata'
 	);
 
 	/**
@@ -161,11 +158,7 @@ class FFmpeg {
 		return $this->_metadata;
 	}
 
-	/**
-	 * get cmd
-	 * @return mixed
-	 */
-	public function get_cmd ()
+	public function __toString()
 	{
 		return $this->_cmd;
 	}
@@ -200,10 +193,6 @@ class FFmpeg {
 
 				switch ($param)
 				{
-					case 'loglevel':
-						$value = $this->_check_loglevel ();
-					break;
-
 					case 'watermark':
 						$value = $this->_set_watermark($value, $extra);
 					break;
@@ -230,21 +219,13 @@ class FFmpeg {
 						$this->_set_audio_params ($extra);
 					break;
 
-					case 'stream':
-						$this->_set_stream($value, $extra);
+					case 'mapping':
+						$this->_set_mapping($value, $extra);
 						$param = NULL;
 					break;
-
-					case 'debug':
-						if ($value) {
-							$this->_set_log_file($extra);
-						}
-					break;
 				}
 
-				if ($param) {
-					$this->_params[$param] = $value;
-				}
+				$this->_set($param, $value);
 			}
 			else {
 				throw new FFmpegException ('Setting param ' .$param. ' not allowed');
@@ -328,6 +309,79 @@ class FFmpeg {
 		$this->set('ss', $ss, TRUE);
 		$this->set('vframes', 1);
 		$this->set('extra', $extra);
+		$this->_set_loglevel('quiet');
+
+		return $this;
+	}
+
+	/**
+	 * Set debug params
+	 * @param  boolean $enabled
+	 * @param  string  $log_dir
+	 * @param  boolean $delete  delete if success
+	 * @return FFmpeg
+	 */
+	public function debug ($enabled = FALSE, $log_dir = NULL, $delete = TRUE)
+	{
+		$this->_set ('debug', $enabled);
+		$this->_set_loglevel('debug');
+		$this->_set_log_file($log_dir, $delete);
+		return $this;
+	}
+
+	/**
+	 * Render progressbar
+	 */
+	public function progressbar ()
+	{
+		$bar = new CliProgressBar(100);
+
+		$this->trigger(function($data) use ($bar) {
+
+			$action = Arr::get($data, 'action');
+			$message = Arr::get($data, 'message');
+
+			switch ($action) {
+				case 'start':
+					$message = (array) $message;
+					$out = sprintf ('«%s»', basename ($data['input']));
+					echo Utils::color($out, 'green'), PHP_EOL;
+
+					foreach ((array) $message as $type=>$streams) {
+						foreach ($streams as $value) {
+							$out = sprintf ('%s: %s', Utils::color(mb_convert_case($type, MB_CASE_TITLE), 'yellow'), $value);
+							echo $out, PHP_EOL;
+						}
+					}
+				break;
+
+				case 'progress':
+					$message = intval ($message);
+					if ($message > 80)
+						$bar->setColorToGreen();
+					elseif ($message > 50)
+						$bar->setColorToCyan();
+					elseif ($message > 25)
+						$bar->setColorToYellow();
+					elseif ($message >= 0)
+						$bar->setColorToRed();
+					$bar->setProgressTo($message);
+					$bar->display();
+				break;
+
+				case 'finish':
+					$bar->setColorToGreen();
+					$bar->setProgressTo(100);
+					$bar->display();
+					$bar->end();
+					echo PHP_EOL;
+				break;
+
+				case 'error':
+					echo Utils::color ($message, 'white', 'red'), PHP_EOL;
+				break;
+			}
+		});
 
 		return $this;
 	}
@@ -338,36 +392,40 @@ class FFmpeg {
 	 */
 	public function prepare ()
 	{
-		if ( ! $this->_input)
+		if ( ! $this->_input) {
 			throw new FFmpegException ('No input file!');
+		}
 
 		$this->_set_output_by_format ();
 
 		$streams = Arr::get($this->_metadata, 'streams');
 
-		if (empty ($streams))
+		if (empty ($streams)) {
 			throw new FFmpegException ('Streams not found in file!');
+		}
 
 		$params_cli = new \stdClass;
 
-		$passed        = (array) $this->get ('passed_streams');
-		$streams_param = $this->get('streams');
-		$langs         = $this->get('langs');
-		$width         = $this->get ('width');
-		$crf           = $this->get ('crf');
-		$preset        = $this->get ('preset');
-		$fps           = $this->get ('fps');
-		$ss_i          = $this->get ('ss_input');
-		$ss_o          = $this->get ('ss_output');
-		$to            = $this->get ('to');
-		$vframes       = $this->get ('vframes');
-		$loglevel      = $this->get ('loglevel');
-		$metadata      = $this->get ('metadata');
-		$fmt           = $this->get('format');
-		$size          = $this->get ('size');
-		$scale         = $this->get ('scale');
-		$vn            = $this->get ('vn', FALSE);
-		$an            = $this->get ('an', FALSE);
+		$passed   = (array) $this->get ('passthrough');
+		$mapping  = $this->get ('mapping');
+		$langs    = $this->get ('langs');
+		$width    = $this->get ('width');
+		$crf      = $this->get ('crf');
+		$preset   = $this->get ('preset');
+		$fps      = $this->get ('fps');
+		$ss_i     = $this->get ('ss_input');
+		$ss_o     = $this->get ('ss_output');
+		$to       = $this->get ('to');
+		$vframes  = $this->get ('vframes');
+		$loglevel = $this->get ('loglevel');
+		$metadata = $this->get ('metadata');
+		$fmt      = $this->get('format');
+		$size     = $this->get ('size');
+		$scale    = $this->get ('scale');
+		$vn       = $this->get ('vn', FALSE);
+		$an       = $this->get ('an', FALSE);
+		$sn       = $this->get ('sn', FALSE);
+		$extra    = $this->get('extra');
 
 		$vc_active = $ac_active = FALSE;
 
@@ -377,14 +435,6 @@ class FFmpeg {
 
 		if ($vframes) {
 			$params_cli->transcode[] = sprintf ('-vframes %d', $vframes);
-		}
-
-		if ($vn) {
-			$params_cli->transcode[] = '-vn';
-		}
-
-		if ($an) {
-			$params_cli->transcode[] = '-an';
 		}
 
 		if ($loglevel) {
@@ -403,152 +453,168 @@ class FFmpeg {
 			$params_cli->map[]    = '-map 1';
 		}
 
-		if ( ! is_array ($streams_param)) {
-			$vcodec = $this->get('vcodec');
-			$acodec = $this->get('acodec');
-			$scodec = $this->get('scodec');
-
-			$vb = (int) Arr::path($this->_metadata, 'video.0.bit_rate');
-			$ab = (int) Arr::path($this->_metadata, 'audio.0.bit_rate');
-
-			$transcode_string = '';
-
-			if ($vcodec AND ! $vn) {
-				$transcode_string .= sprintf ('-c:v %s ', $vcodec);
-			}
-
-			if ($acodec AND ! $an) {
-				$transcode_string .= sprintf ('-c:a %s ', $acodec);
-			}
-
-			if ($scodec) {
-				$transcode_string .= sprintf ('-c:s %s', $scodec);
-			}
-
-			if ($transcode_string) {
-				$params_cli->transcode[] = trim ($transcode_string);
-			}
-
-			$params_cli->map[] = '-map 0';
-
-			if ($metadata) {
-				$params_cli->map[] = '-map_metadata 0';
-			}
-
-			if ($acodec != 'copy' AND ! $an) {
-				$ac_active = TRUE;
-			}
-
-			if ($vcodec != 'copy' AND ! $vn) {
-				$vc_active = TRUE;
-			}
-
-			$this->_set_info ('video', 0, $vcodec, $vb);
-			$this->_set_info ('audio', 0, $acodec, $ab);
-			$this->_set_info ('subtitle', 0, $scodec);
+		if (empty($mapping)) {
+			$mapping = [
+				'video'    => ['count'=>1, 'langs'=>[]],
+				'audio'    => ['count'=>1, 'langs'=>[]],
+				'subtitle' => ['count'=>1, 'langs'=>[]]
+			];
 		}
-		else {
+
+		if ($vn) {
+			$mapping['video']['count'] = 0;
+		}
+
+		if ($an) {
+			$mapping['audio']['count'] = 0;
+		}
+
+		if ($sn) {
+			$mapping['subtitle']['count'] = 0;
+		}
+
+		if ($metadata == 'copy') {
+			$params_cli->map[] = '-map_metadata 0';
+		} else {
 			$params_cli->map[] = '-map_metadata -1';
-			foreach ($streams as $stream_type=>$stream) {
+		}
 
-				$stream_counter = 0;
+		foreach ($streams as $stream_type=>$stream) {
 
-				$cur_stream_langs = (array) Arr::path($streams_param, $stream_type . '.langs', '.', []);
-				$cur_stream_count = Arr::path($streams_param, $stream_type . '.count', '.', 0);
+			$stream_counter = 0;
 
-				if ( ! isset ($streams_param[$stream_type])) {
-					continue;
-				}
+			$cur_stream_langs = (array) Arr::path($mapping, $stream_type . '.langs', '.', []);
+			$cur_stream_count = Arr::path($mapping, $stream_type . '.count', '.', 0);
+			$cur_stream_index = (int) Arr::path($mapping, $stream_type . '.index', '.', -2);
 
-				$stream_type_alpha = substr ($stream_type, 0, 1);
-				$def_codec  = $this->get ($stream_type_alpha.'codec', 'copy');
+			if ( ! isset ($mapping[$stream_type])) {
+				continue;
+			}
 
-				$def_bitrate = $this->get($stream_type_alpha . 'b');
+			$stream_type_alpha = substr ($stream_type, 0, 1);
+			$def_codec  = $this->get ($stream_type_alpha.'codec', 'copy');
 
-				if (is_numeric($def_bitrate)) {
-					$def_bitrate = $this->_human_bitrate($def_bitrate);
-				}
+			$def_bitrate = $this->get($stream_type_alpha . 'b');
 
-				if ($cur_stream_count) {
-					foreach ($stream as $index=>$stream_data) {
+			if (is_numeric($def_bitrate)) {
+				$def_bitrate = $this->_human_bitrate($def_bitrate);
+			}
 
-						if ($stream_counter === $cur_stream_count) {
-							break;
-						}
+			if ($cur_stream_count > 0) {
+				foreach ($stream as $index=>$stream_data) {
 
-						$stream_lang  = Arr::get($stream_data, 'language');
-						$stream_index = Arr::get($stream_data, 'index', 0);
-						$stream_title = Arr::get($stream_data, 'title', '');
-						$full_lang    = Arr::get($langs, $stream_lang, $stream_lang);
-
-						if ( ! in_array (Arr::get ($stream_data, 'codec_name'), $passed)) {
-							$codec      = $def_codec;
-							$bitrate    = $def_bitrate;
-							$codec_name = $codec;
-						}
-						else {
-							$codec = 'copy';
-						}
-
-						if ($codec == 'copy') {
-							$bitrate = Arr::get($stream_data, 'bit_rate', 0);
-
-							if ($bitrate AND is_numeric($bitrate)) {
-								$bitrate = $this->_human_bitrate($bitrate);
-							}
-
-							$codec_name = Arr::get($stream_data, 'codec_name', '');
-						}
-
-						if ($stream_type == 'subtitle') {
-							$stream_title_new = $stream_title;
-						}
-						else {
-							if ($bitrate) {
-								$stream_title_new = sprintf ('%s [%s @ %s]', mb_convert_case ($full_lang, MB_CASE_TITLE), $codec_name, $bitrate);
-							} else {
-								$stream_title_new = sprintf ('%s @ %s', mb_convert_case ($full_lang, MB_CASE_TITLE), $codec_name);
-							}
-						}
-
-						if ($metadata) {
-							$params_cli->transcode[] = sprintf ('-c:%s:%d %s -metadata:s:%s:%d title="%s" -metadata:s:%s:%d language="%s"', $stream_type_alpha, $stream_counter, $codec, $stream_type_alpha, $stream_counter, escapeshellarg($stream_title_new), $stream_type_alpha, $stream_counter, $stream_lang);
-						}
-						else {
-							$params_cli->transcode[] = sprintf ('-c:%s:%d %s', $stream_type_alpha, $stream_counter, $codec);
-						}
-
-						$add_map_stream = TRUE;
-
-						if ( ! empty ($cur_stream_langs) AND ! empty ($stream_lang)) {
-							if ( ! in_array($stream_lang, $cur_stream_langs)) {
-								$add_map_stream = FALSE;
-								array_pop ($params_cli->transcode);
-							}
-						}
-
-						if ($add_map_stream) {
-							$params_cli->map[] = sprintf('-map 0:%d', $stream_index);
-							$stream_counter++;
-							$bitrate = ($stream_type == 'video' AND $crf) ? 'crf ' . $crf : $bitrate;
-							$this->_set_info ($stream_type, $index, $codec, $bitrate);
-						}
-
-						if ($stream_type == 'audio' AND ! $ac_active AND $codec != 'copy')
-							$ac_active = TRUE;
-
-						elseif ($stream_type == 'video' AND ! $vc_active AND $codec != 'copy')
-							$vc_active = TRUE;
+					if ($stream_counter === $cur_stream_count) {
+						break;
 					}
+
+					$stream_index = (int) Arr::get($stream_data, 'index', -1);
+
+					if ($cur_stream_index >=0 AND ($stream_index != $cur_stream_index)) {
+						continue;
+					}
+
+					$stream_lang = Arr::get($stream_data, 'language');
+
+					if ( ! $stream_lang OR $stream_lang == 'unk') {
+						$stream_lang = 'eng';
+					}
+
+					$stream_title = Arr::get($stream_data, 'title', '');
+
+					if ( ! in_array (Arr::get ($stream_data, 'codec_name'), $passed)) {
+						$codec      = $def_codec;
+						$bitrate    = $def_bitrate;
+						$codec_name = $codec;
+					}
+					else {
+						$codec = 'copy';
+					}
+
+					if ($codec == 'copy') {
+						$bitrate = Arr::get($stream_data, 'bit_rate', 0);
+
+						if ($bitrate AND is_numeric($bitrate)) {
+							$bitrate = $this->_human_bitrate($bitrate);
+						}
+
+						$codec_name = Arr::get($stream_data, 'codec_name', '');
+					}
+
+					/*
+					if ($stream_type == 'subtitle') {
+						$stream_title_new = $stream_title;
+					}
+					else {
+						if ($bitrate) {
+							$stream_title_new = sprintf ('%s [%s @ %s]', mb_convert_case ($full_lang, MB_CASE_TITLE), $codec_name, $bitrate);
+						} else {
+							$stream_title_new = sprintf ('%s @ %s', mb_convert_case ($full_lang, MB_CASE_TITLE), $codec_name);
+						}
+					}
+					*/
+
+					$params_cli->transcode[] = sprintf ('-c:%s:%d %s', $stream_type_alpha, $stream_counter, $codec);
+
+					if ($metadata === TRUE) {
+						$params_cli->transcode[] = sprintf ('-metadata:s:%s:%d title="%s" -metadata:s:%s:%d language="%s"', $stream_type_alpha, $stream_counter, escapeshellarg($stream_title), $stream_type_alpha, $stream_counter, $stream_lang);
+					}
+
+					$add_map_stream = TRUE;
+
+					if ( ! empty ($cur_stream_langs) AND ! empty ($stream_lang)) {
+						if ( ! in_array($stream_lang, $cur_stream_langs)) {
+							$add_map_stream = FALSE;
+							array_pop ($params_cli->transcode);
+						}
+					}
+
+					if ($add_map_stream) {
+						$params_cli->map[] = sprintf('-map 0:%d', $stream_index);
+						$stream_counter++;
+						$bitrate = ($stream_type == 'video' AND $crf) ? 'crf ' . $crf : $bitrate;
+						$this->_set_info ($stream_type, $index, $codec, $bitrate);
+					}
+
+					if ($stream_type == 'audio' AND ! $ac_active AND $codec != 'copy')
+						$ac_active = TRUE;
+
+					elseif ($stream_type == 'video' AND ! $vc_active AND $codec != 'copy')
+						$vc_active = TRUE;
+				}
+			} else {
+				switch ($stream_type) {
+					case 'video':
+						$vn = TRUE;
+					break;
+
+					case 'audio':
+						$an = TRUE;
+					break;
+
+					case 'subtitle':
+						$sn = TRUE;
+					break;
 				}
 			}
 		}
 
-		if ($vc_active AND ($pix_fmt = $this->get('pix_fmt'))) {
-			$params_cli->transcode[] = sprintf ('-pix_fmt %s', $pix_fmt);
+		if ($vn) {
+			$params_cli->transcode[] = '-vn';
+		}
+
+		if ($an) {
+			$params_cli->transcode[] = '-an';
+		}
+
+		if ($sn) {
+			$params_cli->transcode[] = '-sn';
 		}
 
 		if ($vc_active) {
+
+			if (($pix_fmt = $this->get('pix_fmt'))) {
+				$params_cli->transcode[] = sprintf ('-pix_fmt %s', $pix_fmt);
+			}
 
 			if ($crf) {
 				$params_cli->transcode[] = sprintf ('-crf %d', $crf);
@@ -594,8 +660,6 @@ class FFmpeg {
 			$params_cli->output[] = '-strict experimental';
 		}
 
-		$extra = $this->get('extra');
-
 		if ($extra) {
 			$params_cli->transcode[] = $extra;
 		}
@@ -636,14 +700,18 @@ class FFmpeg {
 	 * Run transcoding
 	 * @return bool
 	 */
-	public function run ($progress = TRUE)
+	public function run ($progress = FALSE)
 	{
 		if (empty($this->_cmd)) {
 			throw new FFmpegException ('Empty cmdline');
 		}
 
+		if ($this->_logfile) {
+			fputs ($this->_logfile->handle,  $this->_cmd . "\n\n");
+		}
+
 		if ($progress) {
-			$this->_call_trigger('Converting', 'start');
+			$this->_call_trigger($this->get_info(), 'start');
 
 			$process = Process::factory($this->_cmd, Process::STDERR)
 							->trigger('all', array($this, 'get_progress'))
@@ -656,11 +724,6 @@ class FFmpeg {
 			}
 
 			if ($exitcode === 0) {
-
-				if ($this->_logfile AND $this->_logfile->path) {
-					@unlink ($this->_logfile->path);
-				}
-
 				$this->_call_trigger('Finished', 'finish');
 			}
 			else {
@@ -675,10 +738,10 @@ class FFmpeg {
 
 			system ($this->_cmd, $exitcode);
 			$exitcode = intval ($exitcode);
+		}
 
-			if ($exitcode === 0 AND $this->_logfile AND $this->_logfile->path) {
-				@unlink ($this->_logfile->path);
-			}
+		if ($exitcode === 0 AND $this->_logfile AND $this->_logfile->path AND $this->_logfile->delete) {
+			@unlink ($this->_logfile->path);
 		}
 
 		$this->_params = $this->_default_params;
@@ -727,8 +790,6 @@ class FFmpeg {
 			$progress  = $time / max ($duration, 0.01);
 			$progress  = (int) ($progress * 100);
 			$this->_call_trigger($progress, 'progress');
-		} elseif ($this->get('debug')) {
-			$this->_call_trigger($message, 'debug');
 		}
 
 		return TRUE;
@@ -789,6 +850,50 @@ class FFmpeg {
 		}
 
 		return FALSE;
+	}
+
+	public static function extract_audio ($file, $params = [], $progressbar = FALSE)
+	{
+		$metadata = FFprobe::factory($file)->probe(TRUE);
+		$metadata = Arr::path($metadata, 'streams.audio');
+
+		if ( ! $metadata) {
+			return FALSE;
+		}
+
+		foreach ($metadata as $values) {
+			$index = Arr::get ($values, 'index', FALSE);
+
+			if ($index === FALSE) {
+				continue;
+			}
+
+			$ff = FFmpeg::factory($file)
+				 ->set('mapping', 'audio', ['count'=>1, 'index'=>$index])
+				 ->set('acodec', Arr::get($params, 'codec', 'aac'), ['b'=>Arr::get($params, 'b', '128k'), 'ac'=>Arr::get($params, 'ac', 2), 'ar'=>Arr::get($params, 'ar', 44100)])
+				 ->set('overwrite', TRUE)
+				 ->set('metadata', TRUE)
+				 ->set('prefix', '-stream-'.$index)
+				 ->set('format', Arr::get($params, 'format', 'm4a'))
+				 ->set('sn', TRUE)
+				 ->set('vn', TRUE)
+				 ->prepare();
+
+			if ($progressbar) {
+				$ff->progressbar();
+			}
+
+			$result = $ff->run ($progressbar);
+		}
+	}
+
+	private function _set ($param, $value = FALSE)
+	{
+		if ($param) {
+			$this->_params[$param] = $value;
+		}
+
+		return $this;
 	}
 
 	private function _set_info ($stream_type, $stream_index = 0, $codec, $bitrate = 0)
@@ -871,7 +976,7 @@ class FFmpeg {
 		return $this;
 	}
 
-	private function _set_log_file ($log_dir)
+	private function _set_log_file ($log_dir, $delete = TRUE)
 	{
 		if ($log_dir)
 		{
@@ -887,6 +992,7 @@ class FFmpeg {
 			$this->_logfile = new \stdClass;
 			$this->_logfile->handle = fopen ($logfile, 'wb');
 			$this->_logfile->path = $logfile;
+			$this->_logfile->delete = $delete;
 			return $this;
 		}
 	}
@@ -974,10 +1080,10 @@ class FFmpeg {
 		return $this;
 	}
 
-	private function _set_stream ($type = 'video', array $params)
+	private function _set_mapping ($type = 'video', array $params)
 	{
-		$default = array ('count' => 1, 'langs' => []);
-		$this->_params['streams'][$type] = array_merge ($default, $params);
+		$default = array ('count' => -1, 'langs' => []);
+		$this->_params['mapping'][$type] = array_merge ($default, $params);
 		return $this;
 	}
 
@@ -1042,7 +1148,7 @@ class FFmpeg {
 	    return sprintf("%.{$decimals}f", $bytes / pow(1000, $factor)) . ' ' . Arr::get($size, $factor);
 	}
 
-	private function _check_loglevel ($loglevel)
+	private function _set_loglevel ($loglevel)
 	{
         $allowed = [
 			'quiet',
@@ -1060,7 +1166,9 @@ class FFmpeg {
         	throw new FFmpegException ('Wrong leglevel param');
         }
 
-        return $loglevel;
+        $this->_set ('loglevel', $loglevel);
+
+        return $this;
 	}
 
 	private function _time_to_seconds ($time)
