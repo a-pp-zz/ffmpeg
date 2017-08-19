@@ -344,8 +344,11 @@ class FFmpeg {
 			switch ($action) {
 				case 'start':
 					$message = (array) $message;
-					$out = sprintf ('«%s»', basename ($data['input']));
-					echo Utils::color($out, 'green'), PHP_EOL;
+					$in = sprintf ('Input: «%s»', basename ($data['input']));
+					echo Utils::color($in, 'green'), PHP_EOL;
+
+					$out = sprintf ('Output: «%s»', basename ($data['output']));
+					echo Utils::color($out, 'blue'), PHP_EOL;					
 
 					foreach ((array) $message as $type=>$streams) {
 						foreach ($streams as $value) {
