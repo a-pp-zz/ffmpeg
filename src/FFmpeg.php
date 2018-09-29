@@ -9,7 +9,7 @@ use AppZz\CLI\Progressbar;
 
 /**
  * @package FFmpeg
- * @version 1.3.1
+ * @version 1.3.2
  * @author CoolSwitcher
  * @license MIT
  * @link https://github.com/a-pp-zz/video-converter
@@ -76,14 +76,14 @@ class FFmpeg {
 	 * allowed setters
 	 * @var array
 	 */
-	private $_allowed_setters = array (
+	private $_allowed_setters = [
 		'vcodec', 'acodec', 'scodec', 'mapping', 'vn', 'an', 'sn',
 		'width', 'size', 'fps', 'format', 'vframes',
 		'vb', 'ab', 'ar', 'ac', 'to', 'ss', 'ss_input', 'ss_output',
 		'experimental', 'output_dir', 'overwrite', 'crf', 'preset',
 		'pix_fmt', 'vn', 'an', 'sn', 'extra', 'watermark', 'scale',
 		'passthrough', 'prefix', 'metadata'
-	);
+	];
 
 	/**
 	 * logfile resource
@@ -105,8 +105,7 @@ class FFmpeg {
 
 	public function __construct ($input = NULL)
 	{
-		if ($input)
-		{
+		if ($input) {
 			$this->input ($input);
 		}
 
@@ -264,8 +263,10 @@ class FFmpeg {
 	 */
 	public function output ($filename)
 	{
-		if ( ! empty ($filename))
+		if ( ! empty ($filename)) {
 			$this->_output = $filename;
+		}
+
 		return $this;
 	}
 
@@ -562,11 +563,12 @@ class FFmpeg {
 						$this->_set_info ($stream_type, $index, $codec, $bitrate);
 					}
 
-					if ($stream_type == 'audio' AND ! $ac_active AND $codec != 'copy')
+					if ($stream_type == 'audio' AND ! $ac_active AND $codec != 'copy') {
 						$ac_active = TRUE;
-
-					elseif ($stream_type == 'video' AND ! $vc_active AND $codec != 'copy')
+					}
+					elseif ($stream_type == 'video' AND ! $vc_active AND $codec != 'copy') {
 						$vc_active = TRUE;
+					}
 				}
 			} else {
 				switch ($stream_type) {
@@ -663,20 +665,25 @@ class FFmpeg {
 
 		$params = [];
 
-		if ( ! empty ($params_cli->input))
+		if ( ! empty ($params_cli->input)) {
 			$params[] = implode (' ', $params_cli->input);
+		}
 
-		if ( ! empty ($params_cli->map))
+		if ( ! empty ($params_cli->map)) {
 			$params[] = implode (' ', $params_cli->map);
+		}
 
-		if ( ! empty ($params_cli->filter))
+		if ( ! empty ($params_cli->filter)) {
 			$params[] = trim ($params_cli->filter);
+		}
 
-		if ( ! empty ($params_cli->transcode))
+		if ( ! empty ($params_cli->transcode)) {
 			$params[] = implode (' ', $params_cli->transcode);
+		}
 
-		if ( ! empty ($params_cli->output))
+		if ( ! empty ($params_cli->output)) {
 			$params[] = implode (' ', $params_cli->output);
+		}
 
 		$this->_cmd = FFmpeg::$binary . ' ' . implode (' ', $params);
 
@@ -733,7 +740,7 @@ class FFmpeg {
 
 		$this->_params = $this->_default_params;
 
-		return $exitcode === 0 ? TRUE : FALSE;
+		return ($exitcode === 0);
 	}
 
 	/**
@@ -797,11 +804,13 @@ class FFmpeg {
 				->input($input)
 				->set('overwrite', TRUE);
 
-		if ($output)
+		if ($output) {
 			$f->output($output);
+		}
 
-		if ($output_dir)
+		if ($output_dir) {
 			$f->set('output_dir', $output_dir);
+		}
 
 		$f->screenshot($ss, $width);
 		$f->prepare();
@@ -839,6 +848,13 @@ class FFmpeg {
 		return FALSE;
 	}
 
+	/**
+	 * Extract audio from video
+	 * @param  string  $file
+	 * @param  array   $params
+	 * @param  boolean $progressbar
+	 * @return mixed
+	 */
 	public static function extract_audio ($file, $params = [], $progressbar = FALSE)
 	{
 		$metadata = FFprobe::factory($file)->probe(TRUE);
@@ -1117,12 +1133,12 @@ class FFmpeg {
 	{
 		if ($this->_trigger) {
 
-			$data = array (
+			$data = [
 				'action'  =>$action,
 				'message' =>$message,
 				'input'   =>$this->_input,
 				'output'  =>$this->_output,
-			);
+			];
 
 			call_user_func($this->_trigger, $data);
 		}
@@ -1130,7 +1146,7 @@ class FFmpeg {
 
 	private function _human_bitrate ($bytes, $decimals = 0)
 	{
-	    $size = array('bps','kbps','mbps');
+	    $size = ['bps','kbps','mbps'];
 	    $factor = floor((strlen($bytes) - 1) / 3);
 	    return sprintf("%.{$decimals}f", $bytes / pow(1000, $factor)) . ' ' . Arr::get($size, $factor);
 	}
