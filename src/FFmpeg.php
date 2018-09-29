@@ -5,12 +5,11 @@ use AppZz\Helpers\Arr;
 use AppZz\VideoConverter\Exceptions\FFmpegException;
 use AppZz\Helpers\Filesystem;
 use AppZz\CLI\Process;
-use AppZz\CLI\Utils;
-use Dariuszp\CliProgressBar;
+use AppZz\CLI\Progressbar;
 
 /**
  * @package FFmpeg
- * @version 1.3
+ * @version 1.3.1
  * @author CoolSwitcher
  * @license MIT
  * @link https://github.com/a-pp-zz/video-converter
@@ -332,11 +331,11 @@ class FFmpeg {
 	/**
 	 * Render progressbar
 	 */
-	public function progressbar ()
+	public function progressbar ($total = 0)
 	{
-		$bar = new CliProgressBar(100);
+		$pb = new Progressbar ($total);
 
-		$this->trigger(function($data) use ($bar) {
+		$this->trigger(function($data) use ($pb) {
 
 			$action = Arr::get($data, 'action');
 			$message = Arr::get($data, 'message');
@@ -344,44 +343,29 @@ class FFmpeg {
 			switch ($action) {
 				case 'start':
 					$message = (array) $message;
-					$in = sprintf ('Input: «%s»', basename ($data['input']));
-					echo Utils::color($in, 'green'), PHP_EOL;
-
-					$out = sprintf ('Output: «%s»', basename ($data['output']));
-					echo Utils::color($out, 'blue'), PHP_EOL;					
+					$pb->start(NULL, 'cyan');
+					$pb->text (sprintf('Input: «%s»', basename ($data['input'])), 'green');
+					$pb->text (sprintf('Output: «%s»', basename ($data['output'])), 'green');
 
 					foreach ((array) $message as $type=>$streams) {
 						foreach ($streams as $value) {
-							$out = sprintf ('%s: %s', Utils::color(mb_convert_case($type, MB_CASE_TITLE), 'yellow'), $value);
-							echo $out, PHP_EOL;
+							$out = sprintf ('%s: %s', mb_convert_case($type, MB_CASE_TITLE), $value);
+							$pb->text ($out, 'yellow');
 						}
 					}
 				break;
 
 				case 'progress':
 					$message = intval ($message);
-					if ($message > 80)
-						$bar->setColorToGreen();
-					elseif ($message > 50)
-						$bar->setColorToCyan();
-					elseif ($message > 25)
-						$bar->setColorToYellow();
-					elseif ($message >= 0)
-						$bar->setColorToRed();
-					$bar->setProgressTo($message);
-					$bar->display();
+					$pb->progress($message, TRUE);
 				break;
 
 				case 'finish':
-					$bar->setColorToGreen();
-					$bar->setProgressTo(100);
-					$bar->display();
-					$bar->end();
-					echo PHP_EOL;
+					$pb->end();
 				break;
 
 				case 'error':
-					echo Utils::color ($message, 'white', 'red'), PHP_EOL;
+					$pb->text ($message, 'white', 'red');
 				break;
 			}
 		});
