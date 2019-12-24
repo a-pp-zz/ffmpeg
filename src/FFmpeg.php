@@ -5,11 +5,10 @@ use AppZz\Helpers\Arr;
 use AppZz\VideoConverter\Exceptions\FFmpegException;
 use AppZz\Helpers\Filesystem;
 use AppZz\CLI\Process;
-use AppZz\CLI\Progressbar;
 
 /**
  * @package FFmpeg
- * @version 1.3.2
+ * @version 1.3.3
  * @author CoolSwitcher
  * @license MIT
  * @link https://github.com/a-pp-zz/video-converter
@@ -326,51 +325,6 @@ class FFmpeg {
 		$this->_set ('debug', $enabled);
 		$this->_set_loglevel('debug');
 		$this->_set_log_file($log_dir, $delete);
-		return $this;
-	}
-
-	/**
-	 * Render progressbar
-	 */
-	public function progressbar ($total = 0)
-	{
-		$pb = new Progressbar ($total);
-
-		$this->trigger(function($data) use ($pb) {
-
-			$action = Arr::get($data, 'action');
-			$message = Arr::get($data, 'message');
-
-			switch ($action) {
-				case 'start':
-					$message = (array) $message;
-					$pb->start(NULL, 'cyan');
-					$pb->text (sprintf('Input: «%s»', basename ($data['input'])), 'green');
-					$pb->text (sprintf('Output: «%s»', basename ($data['output'])), 'green');
-
-					foreach ((array) $message as $type=>$streams) {
-						foreach ($streams as $value) {
-							$out = sprintf ('%s: %s', mb_convert_case($type, MB_CASE_TITLE), $value);
-							$pb->text ($out, 'yellow');
-						}
-					}
-				break;
-
-				case 'progress':
-					$message = intval ($message);
-					$pb->progress($message, TRUE);
-				break;
-
-				case 'finish':
-					$pb->end();
-				break;
-
-				case 'error':
-					$pb->text ($message, 'white', 'red');
-				break;
-			}
-		});
-
 		return $this;
 	}
 
@@ -852,10 +806,10 @@ class FFmpeg {
 	 * Extract audio from video
 	 * @param  string  $file
 	 * @param  array   $params
-	 * @param  boolean $progressbar
+	 * @param  closure $callback
 	 * @return mixed
 	 */
-	public static function extract_audio ($file, $params = [], $progressbar = FALSE)
+	public static function extract_audio ($file, $params = [], \Closure $callback)
 	{
 		$metadata = FFprobe::factory($file)->probe(TRUE);
 		$metadata = Arr::path($metadata, 'streams.audio');
@@ -882,11 +836,14 @@ class FFmpeg {
 				 ->set('vn', TRUE)
 				 ->prepare();
 
-			if ($progressbar) {
-				$ff->progressbar();
+			if ($callback) {
+				$ff->trigger ($callback);
+				$progress = TRUE;
+			} else {
+				$progress = FALSE;
 			}
 
-			$result = $ff->run ($progressbar);
+			$result = $ff->run ($progress);
 		}
 	}
 
@@ -913,8 +870,9 @@ class FFmpeg {
 			$height = Arr::get($this->_metadata, 'height', 0);
 			$size = $this->get('size');
 
-			if (empty($size))
+			if (empty($size)) {
 				$size = sprintf ('%dx%d', $width, $height);
+			}
 
 			$info_text = ($codec == 'copy') ? trim(sprintf ($info_text_tpl, $width, $height, $codec_ori, $codec, '')) : sprintf ($info_text_tpl, $width, $height, $codec_ori, $size, $codec);
 		} else {
