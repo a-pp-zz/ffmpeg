@@ -8,7 +8,7 @@ use AppZz\CLI\Process;
 
 /**
  * @package FFmpeg
- * @version 1.3.3
+ * @version 1.3.4
  * @author CoolSwitcher
  * @license MIT
  * @link https://github.com/a-pp-zz/video-converter
@@ -66,7 +66,8 @@ class FFmpeg {
 		'metadata'     =>FALSE,
 		'streams'      =>FALSE,
 		'loglevel'     =>'info',
-		'extra'        =>''
+		'extra'        =>'',
+		'deint'        =>0
 	];
 
 	private $_params = [];
@@ -81,7 +82,7 @@ class FFmpeg {
 		'vb', 'ab', 'ar', 'ac', 'to', 'ss', 'ss_input', 'ss_output',
 		'experimental', 'output_dir', 'overwrite', 'crf', 'preset',
 		'pix_fmt', 'vn', 'an', 'sn', 'extra', 'watermark', 'scale',
-		'passthrough', 'prefix', 'metadata'
+		'passthrough', 'prefix', 'metadata', 'vf', 'deint'
 	];
 
 	/**
@@ -218,6 +219,11 @@ class FFmpeg {
 
 					case 'mapping':
 						$this->_set_mapping($value, $extra);
+						$param = NULL;
+					break;
+
+					case 'vf':
+						$this->_set_vf($value, $extra);
 						$param = NULL;
 					break;
 				}
@@ -368,6 +374,13 @@ class FFmpeg {
 		$an       = $this->get ('an', FALSE);
 		$sn       = $this->get ('sn', FALSE);
 		$extra    = $this->get('extra');
+		$deint    = $this->get('deint');
+
+		if ($deint AND $this->_metadata['is_interlaced']) {
+			$this->set('vf', 'yadif', 1);
+		}
+
+		$vf = $this->get('vf');
 
 		$vc_active = $ac_active = FALSE;
 
@@ -579,7 +592,14 @@ class FFmpeg {
 			}
 
 			if ($scale) {
-				$params_cli->filter[] = 'scale=' . $scale;
+				$params_cli->filter[] = 'scale=' . $scale . ':flags=bicubic';
+			}
+
+			if ($vf) {
+				foreach ($vf as $value) :
+					$params_cli->filter[] = $value;
+				endforeach;
+				unset ($value);
 			}
 
 			if ($this->get ('faststart')) {
@@ -785,7 +805,9 @@ class FFmpeg {
 		$fh = fopen ($input, 'wb');
 
 		foreach ($files as $file) {
-			$line = sprintf ("file %s\n", escapeshellarg($file));
+			$file = escapeshellarg($file);
+			$file = str_replace (['"', '\\'], ["'", '/'], $file);
+			$line = sprintf ("file %s\n", $file);
 			fwrite ($fh, $line);
 		}
 
@@ -794,6 +816,7 @@ class FFmpeg {
 		$cmd = sprintf ('%s -loglevel quiet -f concat -safe 0 -i %s -c copy -y %s', FFmpeg::$binary, escapeshellarg ($input), escapeshellarg($output));
 
 		system ($cmd, $retval);
+		@unlink ($input);
 
 		if (intval($retval) === 0) {
 			return TRUE;
@@ -851,6 +874,15 @@ class FFmpeg {
 	{
 		if ($param) {
 			$this->_params[$param] = $value;
+		}
+
+		return $this;
+	}
+
+	private function _set_vf ($filter, $value = 0)
+	{
+		if ($filter) {
+			$this->_params['vf'][] = sprintf ('%s=%s', $filter, $value);
 		}
 
 		return $this;
@@ -1142,9 +1174,9 @@ class FFmpeg {
 		if ( ! $parts)
 			return 0;
 
-		$h = Arr::get ($parts, 0, 0);
-		$m = Arr::get ($parts, 1, 0);
-		$s = Arr::get ($parts, 2, 0);
+		$h = (int)Arr::get ($parts, 0, 0);
+		$m = (int)Arr::get ($parts, 1, 0);
+		$s = (int)Arr::get ($parts, 2, 0);
 
 		return $h * 3600 + $m * 60 + $s;
 	}

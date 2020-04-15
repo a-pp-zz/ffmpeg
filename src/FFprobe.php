@@ -6,16 +6,37 @@ use AppZz\VideoConverter\Exceptions\FFprobeException;
 class FFprobe {
 
 	private $_input;
+	private $_fields = [
+		'index',
+		'codec_type',
+		'codec_name',
+		'r_frame_rate',
+		'avg_frame_rate',
+		'width',
+		'height',
+		'display_aspect_ratio',
+		'duration',
+		'bit_rate',
+		'sample_rate',
+		'channels',
+	];
+
 	public static $binary = 'ffprobe';
 
 	public function __construct ($input = '')
 	{
-		$this->_input  = $input;
+		$this->_input = $input;
 	}
 
 	public static function factory ($input = '')
 	{
 		return new FFprobe ($input);
+	}
+
+	public function fields (array $fields = [])
+	{
+		$this->_fields = array_merge ($this->_fields, $fields);
+		return $this;
 	}
 
 	public function probe ($pretty_output = TRUE)
@@ -81,21 +102,6 @@ class FFprobe {
 		$needed['date'] = $date;
 		$streams = Arr::get($result, 'streams', []);
 
-		$stream_prop = [
-			'index',
-			'codec_type',
-			'codec_name',
-			'r_frame_rate',
-			'avg_frame_rate',
-			'width',
-			'height',
-			'display_aspect_ratio',
-			'duration',
-			'bit_rate',
-			'sample_rate',
-			'channels',
-		];
-
 		foreach ($streams as $stream_index => $stream )
 		{
 			$language = Arr::path ($stream, 'tags.language', '.', 'unk');
@@ -105,7 +111,12 @@ class FFprobe {
 				$language = 'unk';
 			}
 
-			$stream_data = array_intersect_key($stream, array_flip($stream_prop));
+			if ( ! empty ($this->_fields)) {
+				$stream_data = array_intersect_key($stream, array_flip($this->_fields));
+			} else {
+				$stream_data = $stream;
+			}
+
 			$codec_type     = Arr::get ($stream_data, 'codec_type');
 			$r_frame_rate   = Arr::get ($stream_data, 'r_frame_rate', 0);
 			$avg_frame_rate = Arr::get ($stream_data, 'avg_frame_rate', 0);
@@ -119,6 +130,9 @@ class FFprobe {
 				$needed['height'] = Arr::get ($stream, 'height', 0);
 				$needed['is_hd']  = intval ($needed['width']>=1280);
 				$needed['dar']    = Arr::get ($stream, 'display_aspect_ratio');
+
+				$field_order = Arr::get ($stream, 'field_order', 'progressive');
+				$needed['is_interlaced'] = intval ($field_order != 'progressive');
 
 				if ($needed['dar']) {
 					list ($w_dar,  $h_dar) = explode (':', $needed['dar']);
