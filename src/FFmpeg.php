@@ -8,7 +8,7 @@ use AppZz\CLI\Process;
 
 /**
  * @package FFmpeg
- * @version 1.3.4
+ * @version 1.3.5
  * @author CoolSwitcher
  * @license MIT
  * @link https://github.com/a-pp-zz/video-converter
@@ -376,7 +376,10 @@ class FFmpeg {
 		$extra    = $this->get('extra');
 		$deint    = $this->get('deint');
 
-		if ($deint AND $this->_metadata['is_interlaced']) {
+		$duration_human = Arr::get($this->_metadata, 'duration_human');
+		$is_interlaced = Arr::get($this->_metadata, 'is_interlaced');
+
+		if ($deint AND $is_interlaced) {
 			$this->set('vf', 'yadif', 1);
 		}
 
@@ -527,7 +530,7 @@ class FFmpeg {
 						$params_cli->map[] = sprintf('-map 0:%d', $stream_index);
 						$stream_counter++;
 						$bitrate = ($stream_type == 'video' AND $crf) ? 'crf ' . $crf : $bitrate;
-						$this->_set_info ($stream_type, $index, $codec, $bitrate);
+						$this->_set_info ($stream_type, $index, $codec, $bitrate, $duration_human);
 					}
 
 					if ($stream_type == 'audio' AND ! $ac_active AND $codec != 'copy') {
@@ -888,7 +891,7 @@ class FFmpeg {
 		return $this;
 	}
 
-	private function _set_info ($stream_type, $stream_index = 0, $codec, $bitrate = 0)
+	private function _set_info ($stream_type, $stream_index = 0, $codec, $bitrate = 0, $duration = '00:00:00')
 	{
 		$codec_ori = Arr::path($this->_metadata, 'streams.' . $stream_type . '.' . $stream_index . '.codec_name');
 
@@ -897,7 +900,7 @@ class FFmpeg {
 		}
 
 		if ($stream_type == 'video') {
-			$info_text_tpl = '%dx%d %s => %s %s';
+			$info_text_tpl = '%dx%d %s [%s] => %s %s';
 			$width = Arr::get($this->_metadata, 'width', 0);
 			$height = Arr::get($this->_metadata, 'height', 0);
 			$size = $this->get('size');
@@ -906,7 +909,7 @@ class FFmpeg {
 				$size = sprintf ('%dx%d', $width, $height);
 			}
 
-			$info_text = ($codec == 'copy') ? trim(sprintf ($info_text_tpl, $width, $height, $codec_ori, $codec, '')) : sprintf ($info_text_tpl, $width, $height, $codec_ori, $size, $codec);
+			$info_text = ($codec == 'copy') ? trim(sprintf ($info_text_tpl, $width, $height, $codec_ori, $codec, '')) : sprintf ($info_text_tpl, $width, $height, $codec_ori, $duration, $size, $codec);
 		} else {
 			$info_text_tpl = '%s => %s';
 			$info_text = sprintf ($info_text_tpl, $codec_ori, $codec);
@@ -1129,6 +1132,14 @@ class FFmpeg {
 				'input'   =>$this->_input,
 				'output'  =>$this->_output,
 			];
+
+			if ($action == 'finish') {
+				$metadata = FFprobe::factory($this->_output)->probe(TRUE);
+				$data['i_duration'] = Arr::get ($this->_metadata, 'duration');
+				$data['i_duration_human'] = Arr::get ($this->_metadata, 'duration_human');
+				$data['o_duration'] = Arr::get ($metadata, 'duration');
+				$data['o_duration_human'] = Arr::get ($metadata, 'duration_human');
+			}
 
 			call_user_func($this->_trigger, $data);
 		}

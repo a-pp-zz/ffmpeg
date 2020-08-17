@@ -72,6 +72,7 @@ class FFprobe {
 
 		$needed 			   = [];
 		$needed['duration']    = (double) Arr::path($result, 'format.duration', '.', 0);
+		$needed['duration_human'] = FFprobe::ts_format($needed['duration'], [], TRUE);
 		$needed['size']        = (int) Arr::path($result, 'format.size', '.', 0);
 		$needed['bit_rate']    = (int) Arr::path($result, 'format.bit_rate', '.', 0);
 		$needed['format_name'] = Arr::path ($result, 'format.format_name', '.', '');
@@ -87,8 +88,9 @@ class FFprobe {
 			$needed['longitude'] = (double) ($loc[3].$loc[4]);
 		}
 
-		if (empty ($date) AND !empty ($creation_time))
+		if (empty ($date) AND !empty ($creation_time)) {
 			$date = $creation_time;
+		}
 
 		if ( ! empty ($date)) {
 			$date = str_replace ("T", " ", $date);
@@ -165,11 +167,13 @@ class FFprobe {
 
 			} else {
 
-				if (isset($stream_data['avg_frame_rate']))
+				if (isset($stream_data['avg_frame_rate'])) {
 					unset($stream_data['avg_frame_rate']);
+				}
 
-				if (isset($stream_data['r_frame_rate']))
+				if (isset($stream_data['r_frame_rate'])) {
 					unset($stream_data['r_frame_rate']);
+				}
 			}
 
 			$needed['streams'][$codec_type][] = $stream_data;
@@ -177,5 +181,66 @@ class FFprobe {
 
 		$result = $needed;
 		unset ($needed);
+	}
+
+	public static function ts_format ($duration, $after = [], $show_seconds = FALSE)
+	{
+		$duration = intval ($duration);
+
+		if ($duration < 60)
+		{
+			$show_seconds = TRUE;
+		}
+
+		if ($duration)
+		{
+			$hh = $mm = $ss = 0;
+			$after = (array) $after;
+			$after_hh = Arr::get ($after, 'hh', ':');
+			$after_mm = Arr::get ($after, 'mm', ':');
+			$after_ss = Arr::get ($after, 'ss', '');
+
+			if ($duration >= 3600)
+			{
+				$hh = intval($duration / 3600);
+				$duration -= ($hh * 3600);
+			}
+
+			if ($duration >= 60)
+			{
+				$mm = intval($duration / 60);
+				$ss = $duration - ($mm * 60);
+			}
+			else
+			{
+				$mm = 0;
+				$ss = $duration;
+			}
+
+			$fmt = '<hour><after_hour><min><after_min><sec><after_sec>';
+
+			$srch = ['<hour>', '<after_hour>', '<min>', '<after_min>', '<sec>', '<after_sec>'];
+			$repl = ['', '', sprintf ('%02d', $mm), $after_mm, '', ''];
+
+			if ($show_seconds)
+			{
+				$repl[4] = sprintf ('%02d', $ss);
+				$repl[5] = $after_ss;
+			}
+			elseif ($repl[3] == ':')
+			{
+				$repl[3] = '';
+			}
+
+			if ($hh OR $after_hh == ':')
+			{
+				$repl[0] = sprintf ('%02d', $hh);
+				$repl[1] = $after_hh;
+			}
+
+			return str_replace ($srch, $repl, $fmt);
+		}
+
+		return FALSE;
 	}
 }
