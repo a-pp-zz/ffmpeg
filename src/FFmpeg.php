@@ -21,6 +21,8 @@ class FFmpeg {
 	 */
 	public static $binary = 'ffmpeg';
 
+	public static $fade_duration = '0.5';
+
 	/**
 	 * pathto input file
 	 * @var string
@@ -192,7 +194,8 @@ class FFmpeg {
 				switch ($param)
 				{
 					case 'watermark':
-						$value = $this->_set_watermark($value, $extra);
+						$this->_set_watermark($value, $extra);
+						$param = NULL;
 					break;
 
 					case 'ss':
@@ -219,11 +222,6 @@ class FFmpeg {
 
 					case 'mapping':
 						$this->_set_mapping($value, $extra);
-						$param = NULL;
-					break;
-
-					case 'vf':
-						$this->_set_vf($value, $extra);
 						$param = NULL;
 					break;
 				}
@@ -380,10 +378,10 @@ class FFmpeg {
 		$is_interlaced = Arr::get($this->_metadata, 'is_interlaced');
 
 		if ($deint AND $is_interlaced) {
-			$this->set('vf', 'yadif', 1);
+			$this->_set_vf('yadif=1', '0:v');
+		} else {
+			$this->_set_vf('yadif=0', '0:v');
 		}
-
-		$vf = $this->get('vf');
 
 		$vc_active = $ac_active = FALSE;
 
@@ -406,9 +404,13 @@ class FFmpeg {
 		$params_cli->input[] = sprintf ("-i %s", escapeshellarg ($this->_input));
 
 		if ($this->get('vcodec') != 'copy' AND ($watermark = $this->get('watermark')) !== FALSE) {
-			$params_cli->input[]  = sprintf ("-i %s", escapeshellarg ($watermark->file) );
-			$params_cli->filter[] = sprintf ("%s", $watermark->overlay);
-			$params_cli->map[]    = '-map 1';
+
+			foreach ($watermark as $wm) {
+				$params_cli->input[]  = sprintf ("-loop 1 -i %s", escapeshellarg ($wm['file']));
+				$params_cli->map[]    = '-map '.$wm['num'];
+			}
+
+			//$params_cli->filter[] = sprintf ("%s", $watermark->overlay);
 		}
 
 		if (empty($mapping)) {
@@ -595,14 +597,49 @@ class FFmpeg {
 			}
 
 			if ($scale) {
-				$params_cli->filter[] = 'scale=' . $scale . ':flags=bicubic';
+				//$params_cli->filter[] = 'scale=' . $scale . ':flags=bicubic';
+				$this->_set_vf('scale=' . $scale . ':flags=bicubic', '0:v');
 			}
 
-			if ($vf) {
-				foreach ($vf as $value) :
-					$params_cli->filter[] = $value;
+			$vf = $this->get ('vf');
+
+			$vf_aliases = [
+				'0:v' => 'bg',
+				'1:v' => 'wm1',
+				'2:v' => 'wm2',
+			];
+
+			$params_cli->filter = '';
+
+			if ( ! empty ($vf)) {
+				foreach ($vf as $key=>$value) :
+					$alias = Arr::get ($vf_aliases, $key);
+					$vf[$alias] = sprintf ('[%s]%s', $key, implode (',', $value));
 				endforeach;
+				unset ($key);
 				unset ($value);
+
+				$ov1 = Arr::path ($watermark, '1:v.overlay');
+				$ov2 = Arr::path ($watermark, '2:v.overlay');
+
+				if (isset ($vf['bg'])) {
+					$params_cli->filter .= $vf['bg'];
+
+					if (isset ($vf['wm1'])) {
+						$params_cli->filter .= '[bg];'.$vf['wm1'] . '[wm1];';
+						$params_cli->filter .= '[bg][wm1]'.$ov1;
+					} elseif ( ! empty ($ov1)) {
+						$params_cli->filter .= '[bg];[bg][1:v]'.$ov1;
+					}
+
+					if (isset ($vf['wm2'])) {
+						$params_cli->filter .= '[video1];';
+						$params_cli->filter .= $vf['wm2'] . '[wm2];';
+						$params_cli->filter .= '[video1][wm2]'.$ov2;
+					} elseif ( ! empty ($ov2)) {
+						$params_cli->filter .= '[video1];[video1][2:v]'.$ov2;
+					}
+				}
 			}
 
 			if ($this->get ('faststart')) {
@@ -611,7 +648,7 @@ class FFmpeg {
 		}
 
 		if ( ! empty ($params_cli->filter)) {
-			$params_cli->filter = sprintf ('-filter_complex %s', escapeshellarg(implode (',', array_reverse($params_cli->filter))));
+			$params_cli->filter = sprintf ('-filter_complex %s', escapeshellarg($params_cli->filter));
 		}
 
 		if ($ac_active) {
@@ -882,10 +919,10 @@ class FFmpeg {
 		return $this;
 	}
 
-	private function _set_vf ($filter, $value = 0)
+	private function _set_vf ($value = '', $new_index = '0:v')
 	{
-		if ($filter) {
-			$this->_params['vf'][] = sprintf ('%s=%s', $filter, $value);
+		if ($value AND $new_index) {
+			$this->_params['vf'][$new_index][] = $value;
 		}
 
 		return $this;
@@ -920,6 +957,16 @@ class FFmpeg {
 		}
 
 		$this->_info[$stream_type][$stream_index] = $info_text;
+
+		if ( ! empty ($wm = $this->get ('watermark'))) {
+			if ( ! isset ($this->_info['watermarks'])) {
+				$wm_files = [];
+				foreach ($wm as $value) {
+					$wm_files[] = basename ($value['file']);
+				}
+				$this->_info['watermarks'][0] = implode (', ', $wm_files);
+			}
+		}
 	}
 
 	private function _set_output ()
@@ -1000,11 +1047,44 @@ class FFmpeg {
 	 * @return Object
 	 */
 	private function _set_watermark ($file, array $params = [])
-	{
-		$m0      = (int) Arr::path($params, 'margins.0');
-		$m1      = (int) Arr::path($params, 'margins.1');
-		$align   = Arr::get($params, 'align', 'bottom-right');
+		{
+		$m0       = (int) Arr::path($params, 'margins.0');
+		$m1       = (int) Arr::path($params, 'margins.1');
+		$align    = Arr::get($params, 'align', 'bottom-right');
+		$size     = Arr::get($params, 'size', 0);
+		$fade_in  = (int)Arr::get($params, 'fade_in', -1);
+		$fade_out = (int)Arr::get($params, 'fade_out', -1);
 		$overlay = 'overlay=';
+		$index = 0;
+
+		if (isset($this->_params['watermark'])) {
+			$index = count ($this->_params['watermark']);
+		}
+
+		$index++;
+
+		if ($index === 3) {
+			throw new FFmpegException ('Only 2 watermarks are supported');
+		}
+
+		$index_t = $index.':v';
+
+		if ($size) {
+			$vf = 'scale=' . $size . ':-1:flags=bicubic';
+			$this->_set_vf ($vf, $index_t);
+		}
+
+		$fade_tpl = 'fade=%s:st=%d:d=%s:alpha=1';
+
+		if ($fade_in >= 0) {
+			$vf = sprintf ($fade_tpl, 'in', $fade_in, FFmpeg::$fade_duration);
+			$this->_set_vf ($vf, $index_t);
+		}
+
+		if ($fade_out > 0) {
+			$vf = sprintf ($fade_tpl, 'out', $fade_out, FFmpeg::$fade_duration);
+			$this->_set_vf ($vf, $index_t);
+		}
 
 		switch ($align)
 		{
@@ -1020,16 +1100,25 @@ class FFmpeg {
 				$overlay .= abs ($m0) . ':' . 'main_h-overlay_h-' . abs ($m1);
 			break;
 
+			case 'center':
+				$overlay .= '(main_w-overlay_w)/2:(main_h-overlay_h)/2';
+			break;
+
 			case 'bottom-right':
 			default:
 				$overlay .= 'main_w-overlay_w-' . abs ($m0) . ':' . 'main_h-overlay_h-' . abs ($m1);
 			break;
 		}
 
-		$wm = new \stdClass;
-		$wm->file = $file;
-		$wm->overlay = $overlay;
-		return $wm;
+		$overlay .= ':shortest=1';
+
+		$this->_params['watermark'][$index_t] = [
+			'file' => $file,
+			'num'  => $index,
+			'overlay' => $overlay
+		];
+
+		return $this;
 	}
 
 	/**
