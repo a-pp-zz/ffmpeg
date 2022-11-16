@@ -19,6 +19,7 @@ class FFprobe {
 		'bit_rate',
 		'sample_rate',
 		'channels',
+		'pix_fmt'
 	];
 
 	public static $binary = 'ffprobe';
@@ -45,7 +46,8 @@ class FFprobe {
 			throw new FFprobeException ('No input file');
 		}
 
-		$cmd  = FFprobe::$binary . ' ' . escapeshellarg ($this->_input) . ' -of json -loglevel quiet -show_format -show_streams -show_error 2>&1';
+		$cmd  = FFprobe::$binary . ' ' . escapeshellarg ($this->_input) . ' -of json -loglevel quiet -show_format -show_streams -show_chapters -show_error 2>&1';
+
 		$json = shell_exec ($cmd);
 		$result = json_decode ($json, TRUE);
 
@@ -103,6 +105,7 @@ class FFprobe {
 
 		$needed['date'] = $date;
 		$streams = Arr::get($result, 'streams', []);
+		$chapters = Arr::get($result, 'chapters', []);
 
 		foreach ($streams as $stream_index => $stream )
 		{
@@ -119,6 +122,10 @@ class FFprobe {
 				$stream_data = $stream;
 			}
 
+			if (isset($stream_data['bit_rate'])) {
+				$stream_data['bit_rate_human'] = FFprobe::human_bitrate($stream_data['bit_rate']);
+			}
+
 			$codec_type     = Arr::get ($stream_data, 'codec_type');
 			$r_frame_rate   = Arr::get ($stream_data, 'r_frame_rate', 0);
 			$avg_frame_rate = Arr::get ($stream_data, 'avg_frame_rate', 0);
@@ -128,9 +135,16 @@ class FFprobe {
 			$stream_data['title'] = $title;
 
 			if ($codec_type == 'video') {
+
+				if (Arr::get ($stream, 'codec_name') == 'mjpeg') {
+					continue;
+				}
+
 				$needed['width']  = Arr::get ($stream, 'width', 0);
 				$needed['height'] = Arr::get ($stream, 'height', 0);
 				$needed['is_hd']  = intval ($needed['width']>=1280);
+				$needed['is_hdr'] = intval (Arr::get ($stream, 'color_primaries') == 'bt2020');
+				$needed['is_10bit'] = intval (Arr::get ($stream_data, 'pix_fmt') == 'yuv420p10le');
 				$needed['dar']    = Arr::get ($stream, 'display_aspect_ratio');
 
 				$field_order = Arr::get ($stream, 'field_order', 'progressive');
@@ -179,6 +193,28 @@ class FFprobe {
 			$needed['streams'][$codec_type][] = $stream_data;
 		}
 
+		if ( ! empty ($needed['streams'])) {
+			$streams_ord = ['video'=>1, 'audio'=>2, 'subtitle'=>3, 'data'=>4];
+			uksort ($needed['streams'], function ($a, $b) use ($streams_ord) {
+				return (Arr::get($streams_ord, $a) > Arr::get($streams_ord, $b));
+			});
+		}
+
+		foreach ($chapters as $chapter_data) {
+			$start_time = Arr::get ($chapter_data, 'start_time', 0);
+			$end_time = Arr::get ($chapter_data, 'end_time', 0);
+			$title = Arr::path ($chapter_data, 'tags.title');
+			$start = FFprobe::ts_format($start_time, [], TRUE);
+			$end = FFprobe::ts_format($end_time, [], TRUE);
+			$needed['chapters'][] = [
+				'title'=>$title,
+				'start'=>$start,
+				'end'=>$end,
+				'start_seconds'=>$start_time,
+				'end_seconds'=>$end_time
+			];
+		}
+
 		$result = $needed;
 		unset ($needed);
 	}
@@ -192,55 +228,57 @@ class FFprobe {
 			$show_seconds = TRUE;
 		}
 
-		if ($duration)
+		$hh = $mm = $ss = 0;
+		$after = (array) $after;
+		$after_hh = Arr::get ($after, 'hh', ':');
+		$after_mm = Arr::get ($after, 'mm', ':');
+		$after_ss = Arr::get ($after, 'ss', '');
+
+		if ($duration >= 3600)
 		{
-			$hh = $mm = $ss = 0;
-			$after = (array) $after;
-			$after_hh = Arr::get ($after, 'hh', ':');
-			$after_mm = Arr::get ($after, 'mm', ':');
-			$after_ss = Arr::get ($after, 'ss', '');
-
-			if ($duration >= 3600)
-			{
-				$hh = intval($duration / 3600);
-				$duration -= ($hh * 3600);
-			}
-
-			if ($duration >= 60)
-			{
-				$mm = intval($duration / 60);
-				$ss = $duration - ($mm * 60);
-			}
-			else
-			{
-				$mm = 0;
-				$ss = $duration;
-			}
-
-			$fmt = '<hour><after_hour><min><after_min><sec><after_sec>';
-
-			$srch = ['<hour>', '<after_hour>', '<min>', '<after_min>', '<sec>', '<after_sec>'];
-			$repl = ['', '', sprintf ('%02d', $mm), $after_mm, '', ''];
-
-			if ($show_seconds)
-			{
-				$repl[4] = sprintf ('%02d', $ss);
-				$repl[5] = $after_ss;
-			}
-			elseif ($repl[3] == ':')
-			{
-				$repl[3] = '';
-			}
-
-			if ($hh OR $after_hh == ':')
-			{
-				$repl[0] = sprintf ('%02d', $hh);
-				$repl[1] = $after_hh;
-			}
-
-			return str_replace ($srch, $repl, $fmt);
+			$hh = intval($duration / 3600);
+			$duration -= ($hh * 3600);
 		}
 
-		return FALSE;
+		if ($duration >= 60)
+		{
+			$mm = intval($duration / 60);
+			$ss = $duration - ($mm * 60);
+		}
+		else
+		{
+			$mm = 0;
+			$ss = $duration;
+		}
+
+		$fmt = '<hour><after_hour><min><after_min><sec><after_sec>';
+
+		$srch = ['<hour>', '<after_hour>', '<min>', '<after_min>', '<sec>', '<after_sec>'];
+		$repl = ['', '', sprintf ('%02d', $mm), $after_mm, '', ''];
+
+		if ($show_seconds)
+		{
+			$repl[4] = sprintf ('%02d', $ss);
+			$repl[5] = $after_ss;
+		}
+		elseif ($repl[3] == ':')
+		{
+			$repl[3] = '';
+		}
+
+		if ($hh OR $after_hh == ':')
+		{
+			$repl[0] = sprintf ('%02d', $hh);
+			$repl[1] = $after_hh;
+		}
+
+		return str_replace ($srch, $repl, $fmt);
+	}
+
+	public static function human_bitrate ($bytes, $decimals = 0)
+	{
+	    $size = ['bps','kbps','mbps'];
+	    $factor = floor((strlen($bytes) - 1) / 3);
+	    return sprintf("%.{$decimals}f", $bytes / pow(1000, $factor)) . ' ' . Arr::get($size, $factor);
 	}
 }

@@ -8,7 +8,7 @@ use AppZz\CLI\Process;
 
 /**
  * @package FFmpeg
- * @version 1.3.5
+ * @version 1.3.6
  * @author CoolSwitcher
  * @license MIT
  * @link https://github.com/a-pp-zz/video-converter
@@ -457,7 +457,7 @@ class FFmpeg {
 			$def_bitrate = $this->get($stream_type_alpha . 'b');
 
 			if (is_numeric($def_bitrate)) {
-				$def_bitrate = $this->_human_bitrate($def_bitrate);
+				$def_bitrate = FFprobe::human_bitrate($def_bitrate);
 			}
 
 			if ($cur_stream_count > 0) {
@@ -494,7 +494,7 @@ class FFmpeg {
 						$bitrate = Arr::get($stream_data, 'bit_rate', 0);
 
 						if ($bitrate AND is_numeric($bitrate)) {
-							$bitrate = $this->_human_bitrate($bitrate);
+							$bitrate = FFprobe::human_bitrate($bitrate);
 						}
 
 						$codec_name = Arr::get($stream_data, 'codec_name', '');
@@ -1232,13 +1232,6 @@ class FFmpeg {
 
 			call_user_func($this->_trigger, $data);
 		}
-	}
-
-	private function _human_bitrate ($bytes, $decimals = 0)
-	{
-	    $size = ['bps','kbps','mbps'];
-	    $factor = floor((strlen($bytes) - 1) / 3);
-	    return sprintf("%.{$decimals}f", $bytes / pow(1000, $factor)) . ' ' . Arr::get($size, $factor);
 	}
 
 	private function _set_loglevel ($loglevel)
