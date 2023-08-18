@@ -1,6 +1,6 @@
 {
     "name": "appzz/video-converter",
-    "description": "Video converter tools wrapper ffmpeg, ffprobe",
+    "description": "Video converter tools wrapper for ffmpeg, ffprobe",
     "type": "library",
     "keywords": [
         "ffmpeg",
@@ -19,9 +19,7 @@
         "php": ">=5.4",
         "appzz/filesystem": "dev-master",
         "appzz/arr": "1.*",
-        "appzz/process": "2.*",
-        "appzz/arr": "1.*",
-        "appzz/process": "1.*"
+        "appzz/process": "2.*"
     },
     "autoload": {
         "psr-4": {"AppZz\\VideoConverter\\": "src/"}
