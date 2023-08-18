@@ -7,8 +7,8 @@ use AppZz\Helpers\Filesystem;
 use AppZz\CLI\Process;
 
 /**
- * @package FFmpeg
- * @version 1.3.6
+ * @package VideoConverer/FFmpeg
+ * @version 1.3.7
  * @author CoolSwitcher
  * @license MIT
  * @link https://github.com/a-pp-zz/video-converter
@@ -204,6 +204,7 @@ class FFmpeg {
 					break;
 
 					case 'to':
+					case 't':
 						$value = $this->_check_time($value);
 					break;
 
@@ -675,6 +676,10 @@ class FFmpeg {
 			$params_cli->output[] = "-to {$to}";
 		}
 
+		if ($t) {
+			$params_cli->output[] = "-t {$t}";
+		}
+
 		$params_cli->output[] = escapeshellarg ($this->_output);
 
 		$params = [];
@@ -946,7 +951,7 @@ class FFmpeg {
 				$size = sprintf ('%dx%d', $width, $height);
 			}
 
-			$info_text = ($codec == 'copy') ? trim(sprintf ($info_text_tpl, $width, $height, $codec_ori, $codec, '')) : sprintf ($info_text_tpl, $width, $height, $codec_ori, $duration, $size, $codec);
+			$info_text = ($codec == 'copy') ? trim(sprintf ($info_text_tpl, $width, $height, $codec_ori, $duration, $size, $codec)) : sprintf ($info_text_tpl, $width, $height, $codec_ori, $duration, $size, $codec);
 		} else {
 			$info_text_tpl = '%s => %s';
 			$info_text = sprintf ($info_text_tpl, $codec_ori, $codec);
