@@ -3,6 +3,13 @@ namespace AppZz\VideoConverter;
 use AppZz\Helpers\Arr;
 use AppZz\VideoConverter\Exceptions\FFprobeException;
 
+/**
+ * @package VideoConverer/FFprobe
+ * @version 1.3.7
+ * @author CoolSwitcher
+ * @license MIT
+ * @link https://github.com/a-pp-zz/video-converter
+ */
 class FFprobe {
 
 	private $_input;
@@ -147,8 +154,15 @@ class FFprobe {
 				$needed['is_10bit'] = intval (Arr::get ($stream_data, 'pix_fmt') == 'yuv420p10le');
 				$needed['dar']    = Arr::get ($stream, 'display_aspect_ratio');
 
+				if ( ! empty ($cinema_p3_log)) {
+					$needed['cinema_p3_log'] = $cinema_p3_log;
+				}
+
 				$field_order = Arr::get ($stream, 'field_order', 'progressive');
 				$needed['is_interlaced'] = intval ($field_order != 'progressive');
+				$rotation = $this->_get_rotation (Arr::get ($stream, 'side_data_list', []));
+
+				$needed['is_vertical'] = intval (abs($rotation) == 90);
 
 				if ($needed['dar']) {
 					list ($w_dar,  $h_dar) = explode (':', $needed['dar']);
@@ -280,5 +294,18 @@ class FFprobe {
 	    $size = ['bps','kbps','mbps'];
 	    $factor = floor((strlen($bytes) - 1) / 3);
 	    return sprintf("%.{$decimals}f", $bytes / pow(1000, $factor)) . ' ' . Arr::get($size, $factor);
+	}
+
+	private function _get_rotation ($side_data_list)
+	{
+		$side_data_list = (array)$side_data_list;
+
+		foreach ($side_data_list as $key => $value) {
+			if (isset($value['rotation'])) {
+				return intval ($value['rotation']);
+			}
+		}
+
+		return 0;
 	}
 }
