@@ -466,7 +466,6 @@ class FFmpeg
         $extra = $this->get('extra');
         $deint = $this->get('deint');
         $watermark = $this->get('watermark');
-        $hw = $this->get('hw');
 
         $is_interlaced = Arr::get($this->_metadata, 'is_interlaced');
 
@@ -476,9 +475,7 @@ class FFmpeg
             $params_cli->transcode[] = sprintf('-vframes %d', $vframes);
         }
 
-        if ($hw) {
-            $params_cli->input[] = "-hwaccel auto";
-        }
+        $params_cli->input[] = "-hwaccel auto";
 
         if ($loglevel) {
             $params_cli->input[] = "-loglevel {$loglevel}";
@@ -791,9 +788,7 @@ class FFmpeg
             $this->_call_trigger('Started', 'start');
         }
 
-        $process->run(TRUE);
-
-        $exitcode = $process->get_exitcode();
+        $exitcode = $process->run(TRUE);
 
         if ($this->_logfile and $this->_logfile->handle) {
             if (!$progress) {
@@ -916,8 +911,8 @@ class FFmpeg
         fclose($fh);
 
         $cmd = sprintf('%s -loglevel repeat+info -f concat -safe 0 -i %s -c copy -y %s', FFmpeg::$binary, escapeshellarg($input), escapeshellarg($output));
-        $process = Process::factory($cmd)->run(true);
-        $exitcode = $process->get_exitcode();
+        $process = Process::factory($cmd);
+        $exitcode = $process->run(true);
         unlink($input);
         $log = $process->get_log(Process::STDERR, '');
 
@@ -1375,30 +1370,26 @@ class FFmpeg
                 }
             }
 
-            $new_codec = NULL;
-
             switch ($hw) :
                 case 'mac':
-                    $new_codec = $vcodec . '_videotoolbox';
+                    $vcodec .= '_videotoolbox';
                     if ($_10bit) {
                         $pix_fmt = 'p010le';
                     }
                     break;
                 case 'intel':
-                    $new_codec = $vcodec . '_qsv';
+                    $vcodec .= '_qsv';
                     break;
                 case 'nvidia':
-                    $new_codec = $vcodec . '_nvenc';
+                    $vcodec .= '_nvenc';
                     break;
                 case 'amd':
-                    $new_codec = $vcodec . '_amf';
+                    $vcodec .= '_amf';
                     break;
             endswitch;
-
-            if ($new_codec) {
-                $this->_set('vcodec', $new_codec);
-            }
         }
+
+        $this->_set('vcodec', $vcodec);
 
         if ($crf) {
             $this->set('crf', $crf);
