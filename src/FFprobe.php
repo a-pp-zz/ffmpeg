@@ -66,10 +66,10 @@ class FFprobe
         $cmd = sprintf('%s %s -of json -loglevel quiet -show_format -show_streams -show_chapters -show_error', FFprobe::$binary, escapeshellarg($this->_input));
 
         $process = Process::factory($cmd);
-        $process->run(TRUE);
+        $exitcode = $process->run(TRUE);
 
-        if ($process->get_exitcode() === 0) {
-            $json = $process->get_log(Process::STDOUT, '');
+        if ($exitcode === 0) {
+            $json = $process->get_output();
             $result = json_decode($json, TRUE);
 
             if (json_last_error() !== JSON_ERROR_NONE) {
