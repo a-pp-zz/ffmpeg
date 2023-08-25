@@ -126,7 +126,8 @@ class FFmpeg
         'prefix',
         'metadata',
         'vf',
-        'deint'
+        'deint',
+        'hw'
     ];
 
     /**
@@ -146,6 +147,12 @@ class FFmpeg
      * @var array
      */
     private $_info = [];
+
+    /**
+     * Progress holder
+     * @var array
+     */
+    private $_progress = [];
 
     /**
      * @throws FFmpegException|Exceptions\FFprobeException
@@ -466,6 +473,7 @@ class FFmpeg
         $extra = $this->get('extra');
         $deint = $this->get('deint');
         $watermark = $this->get('watermark');
+        $hw = $this->get('hw');
 
         $is_interlaced = Arr::get($this->_metadata, 'is_interlaced');
 
@@ -475,7 +483,9 @@ class FFmpeg
             $params_cli->transcode[] = sprintf('-vframes %d', $vframes);
         }
 
-        $params_cli->input[] = "-hwaccel auto";
+        if ($hw) {
+            $params_cli->input[] = "-hwaccel auto";
+        }
 
         if ($loglevel) {
             $params_cli->input[] = "-loglevel {$loglevel}";
@@ -781,13 +791,16 @@ class FFmpeg
         $process = Process::factory($this->_cmd);
 
         if ($progress) {
-            $process->trigger('all', [$this, 'get_progress']);
+            $process->trigger('all', function ($data) {
+                call_user_func([$this, 'get_progress'], $data);
+            });
             $this->_call_trigger($this->get_info(), 'start');
             $this->_call_trigger(0, 'progress');
         } else {
             $this->_call_trigger('Started', 'start');
         }
 
+        $this->_progress['exec_time'] = microtime(true);
         $exitcode = $process->run(TRUE);
 
         if ($this->_logfile and $this->_logfile->handle) {
@@ -798,7 +811,11 @@ class FFmpeg
         }
 
         if ($exitcode === 0) {
-            $this->_call_trigger('Finished', 'finish');
+            $this->_progress['exec_time'] = FFprobe::ts_format(microtime(true) - $this->_progress['exec_time']);
+            $fps = Arr::get($this->_progress, 'fps', []);
+            $this->_progress['fps'] = round ((array_sum ($fps) / count ($fps)), 2);
+            $this->_progress['progress'] = 100;
+            $this->_call_trigger('Finish', 'finish');
 
             if ($this->_logfile and $this->_logfile->path and $this->_logfile->delete) {
                 unlink($this->_logfile->path);
@@ -824,7 +841,13 @@ class FFmpeg
         }
 
         $data = Arr::get($data, Process::STDERR);
-        $duration = $this->_get_output_duration(FALSE);
+        $duration = Arr::get($this->_progress, 'duration');
+
+        if (empty($duration)) {
+            $duration = $this->_get_output_duration(FALSE);
+            $this->_progress['duration'] = $duration;
+        }
+
         $buffer = Arr::get($data, 'buffer');
 
         if (!empty ($buffer)) {
@@ -837,17 +860,15 @@ class FFmpeg
             return FALSE;
         }
 
-        if (preg_match("/time=([\d:\.]*)/", $all_messages, $m)) {
-            $current_duration = Arr::get($m, 1, '0:0:0');
-
-            if (empty($current_duration)) {
-                return 0;
-            }
-
-            $time = $this->_time_to_seconds($current_duration);
+        if (preg_match("#fps=(?<fps>[\d:\.]*).*time=(?<time>[\d:\.]*)#D", $all_messages, $m)) {
+            $time = Arr::get($m, 'time', '0:0:0');
+            $fps = (int)Arr::get($m, 'fps', 0);
+            $this->_progress['fps'][] = $fps;
+            $time = $this->_time_to_seconds($time);
 
             $progress = $time / max($duration, 0.01);
             $progress = (int)($progress * 100);
+            $this->_progress['progress'] = $progress;
             $this->_call_trigger($progress, 'progress');
         }
 
@@ -1172,12 +1193,12 @@ class FFmpeg
     }
 
     /**
-     * @param $log_dir
-     * @param $delete
+     * @param string $log_dir
+     * @param bool $delete
      * @return $this
      * @throws FFmpegException
      */
-    private function _set_log_file($log_dir, $delete = TRUE)
+    private function _set_log_file(string $log_dir = '', bool $delete = TRUE)
     {
         if ($log_dir) {
             if (!is_dir($log_dir)) {
@@ -1442,6 +1463,8 @@ class FFmpeg
                 $data['i_duration_human'] = Arr::get($this->_metadata, 'duration_human');
                 $data['o_duration'] = Arr::get($metadata, 'duration');
                 $data['o_duration_human'] = Arr::get($metadata, 'duration_human');
+                $data['fps'] = Arr::get($this->_progress, 'fps', 0);
+                $data['exec_time'] = Arr::get($this->_progress, 'exec_time', 0);
             }
 
             call_user_func($this->_trigger, $data);
