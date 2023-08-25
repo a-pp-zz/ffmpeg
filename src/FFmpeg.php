@@ -788,7 +788,7 @@ class FFmpeg
             fputs($this->_logfile->handle, $this->_cmd . "\n\n");
         }
 
-        $process = Process::factory($this->_cmd);
+        $process = Process::factory($this->_cmd, Process::STDERR);
 
         if ($progress) {
             $process->trigger('all', function ($data) {
@@ -813,7 +813,7 @@ class FFmpeg
         if ($exitcode === 0) {
             $this->_progress['exec_time'] = FFprobe::ts_format(microtime(true) - $this->_progress['exec_time']);
             $fps = Arr::get($this->_progress, 'fps', []);
-            $this->_progress['fps'] = round ((array_sum ($fps) / count ($fps)), 2);
+            $this->_progress['avg_fps'] = round ((array_sum ($fps) / count ($fps)), 2);
             $this->_progress['progress'] = 100;
             $this->_call_trigger('Finish', 'finish');
 
@@ -860,9 +860,9 @@ class FFmpeg
             return FALSE;
         }
 
-        if (preg_match("#fps=(?<fps>[\d:\.]*).*time=(?<time>[\d:\.]*)#D", $all_messages, $m)) {
+        if (preg_match("#fps=\s?(?<fps>[\d:\.]*).*time=(?<time>[\d:\.]*)#D", $all_messages, $m)) {
             $time = Arr::get($m, 'time', '0:0:0');
-            $fps = (int)Arr::get($m, 'fps', 0);
+            $fps = (float)Arr::get($m, 'fps', 0);
             $this->_progress['fps'][] = $fps;
             $time = $this->_time_to_seconds($time);
 
@@ -932,7 +932,7 @@ class FFmpeg
         fclose($fh);
 
         $cmd = sprintf('%s -loglevel repeat+info -f concat -safe 0 -i %s -c copy -y %s', FFmpeg::$binary, escapeshellarg($input), escapeshellarg($output));
-        $process = Process::factory($cmd);
+        $process = Process::factory($cmd, Process::STDERR);
         $exitcode = $process->run(true);
         unlink($input);
         $log = $process->get_log(Process::STDERR, '');
@@ -1060,8 +1060,8 @@ class FFmpeg
                     $overlay = Arr::path($watermark, 'overlay');
 
                     if (isset ($vf['wm']) and !empty ($overlay)) {
-                        $filter .= sprintf('%s%s[wm];', (!empty ($vf['bg']['value']) ? '[bg];' : ''), $vf['wm']['value']);
-                        $filter .= sprintf('[%s][wm]%s', (!empty ($vf['bg']['value']) ? 'bg' : $vf['bg']['index']), $overlay);
+                        $filter .= sprintf('%s%s', (!empty ($vf['bg']['value']) ? '[bg];' : ''), (!empty ($vf['wm']['value']) ? $vf['wm']['value'].'[wm];' : ''));
+                        $filter .= sprintf('[%s][%s]%s', (!empty ($vf['bg']['value']) ? 'bg' : $vf['bg']['index']), (!empty ($vf['wm']['value']) ? 'wm' : $vf['wm']['index']), $overlay);
                     }
                 }
             }
@@ -1293,6 +1293,12 @@ class FFmpeg
 
         $this->_vf_aliases[$index] = 'wm';
 
+        $vf = $this->get('vf');
+
+        if (!isset($vf[$index])) {
+            $this->_set_vf('', $index);
+        }
+
         return $this;
     }
 
@@ -1463,7 +1469,7 @@ class FFmpeg
                 $data['i_duration_human'] = Arr::get($this->_metadata, 'duration_human');
                 $data['o_duration'] = Arr::get($metadata, 'duration');
                 $data['o_duration_human'] = Arr::get($metadata, 'duration_human');
-                $data['fps'] = Arr::get($this->_progress, 'fps', 0);
+                $data['avg_fps'] = Arr::get($this->_progress, 'avg_fps', 0);
                 $data['exec_time'] = Arr::get($this->_progress, 'exec_time', 0);
             }
 
