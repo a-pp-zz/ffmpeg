@@ -65,7 +65,7 @@ class FFprobe
 
         $cmd = sprintf('%s %s -of json -loglevel quiet -show_format -show_streams -show_chapters -show_error', FFprobe::$binary, escapeshellarg($this->_input));
 
-        $process = Process::factory($cmd);
+        $process = Process::factory($cmd, Process::STDOUT);
         $exitcode = $process->run(TRUE);
 
         if ($exitcode === 0) {
