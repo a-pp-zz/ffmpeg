@@ -1,28 +1,20 @@
-# video-converter
-FFmpeg, FFprobe php wrapper and oop-interface
+# FFmpeg
+FFmpeg php wrapper
 
 ## Install
-composer require appzz/video-converter
+composer require appzz/ffmpeg
 
 ## Usage
 ### Init
 ```php
-use AppZz\VideoConverter\FFmpeg;
-use AppZz\VideoConverter\FFprobe;
+use AppZz\VideoTools\FFmpeg;
 require vendor/autoload.php;
 
 /**
 If needed specify path to local binary files
 **/
 FFmpeg::$binary = '/usr/local/bin/ffmpeg';
-FFprobe::$binary = '/usr/local/bin/ffprobe';
 ```
-### Get metadata
-```php
-$info = FFprobe::factory('video.mp4')->probe();
-var_dump($info);
-```
-
 ### Transcode file
 ```php
 $ff = FFmpeg::factory('video.mkv');
@@ -42,6 +34,6 @@ $ff->set('scodec', 'copy')
 
 //set output format
 $ff->format('mp4');
-$ff->progressbar()->prepare();
+$ff->prepare();
 $result = $ff->run();
 ```
