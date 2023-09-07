@@ -1,4 +1,4 @@
 <?php
-namespace AppZz\VideoConverter\Exceptions;
+namespace AppZz\VideoTools\Exceptions;
 
 class FFmpegException extends \Exception {}

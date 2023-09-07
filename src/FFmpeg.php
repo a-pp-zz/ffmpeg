@@ -1,20 +1,18 @@
 <?php
-
-namespace AppZz\VideoConverter;
-
+namespace AppZz\VideoTools;
 use AppZz\Helpers\Arr;
-use AppZz\VideoConverter\Exceptions\FFmpegException;
+use AppZz\VideoTools\Exceptions\FFmpegException;
 use AppZz\Helpers\Filesystem;
 use AppZz\CLI\Process;
 use Closure;
 
 /**
  * FFmpeg Wrapper
- * @package VideoConverer/FFmpeg
+ * @package VideoTools/FFmpeg
  * @version 1.4.x
  * @author CoolSwitcher
  * @license MIT
- * @link https://github.com/a-pp-zz/video-converter
+ * @link https://github.com/a-pp-zz/ffmpeg
  */
 class FFmpeg
 {
