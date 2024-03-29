@@ -329,7 +329,7 @@ class FFmpeg
      */
     public function output(string $filename = '')
     {
-        if (!empty ($filename)) {
+        if ( ! empty ($filename)) {
             $this->_output = $filename;
         }
 
@@ -438,7 +438,7 @@ class FFmpeg
      */
     public function prepare()
     {
-        if (!$this->_input) {
+        if ( ! $this->_input) {
             throw new FFmpegException ('No input file!');
         }
 
@@ -811,7 +811,13 @@ class FFmpeg
         if ($exitcode === 0) {
             $this->_progress['exec_time'] = FFprobe::ts_format(microtime(true) - $this->_progress['exec_time']);
             $fps = Arr::get($this->_progress, 'fps', []);
-            $this->_progress['avg_fps'] = round ((array_sum ($fps) / count ($fps)), 2);
+
+            if ( ! empty ($fps)) {
+                $this->_progress['avg_fps'] = round ((array_sum ($fps) / count ($fps)), 2);
+            } else {
+                $this->_progress['avg_fps'] = 0;
+            }
+
             $this->_progress['progress'] = 100;
             $this->_call_trigger('Finish', 'finish');
 
@@ -1123,13 +1129,19 @@ class FFmpeg
             throw new FFmpegException ('Input file not exists');
         }
 
-        $output_dir = $this->get('output_dir');
+        if ( ! empty ($this->_output)) {
+            $output_dir = pathinfo ($this->_output, PATHINFO_DIRNAME);
+        }
+
+        if (empty ($output_dir)) {
+            $output_dir = $this->get('output_dir');
+        }
 
         if (empty ($output_dir)) {
             $output_dir = dirname($this->_input);
         }
 
-        if (!is_writable($output_dir)) {
+        if ( ! is_writable($output_dir)) {
             throw new FFmpegException ($output_dir . ' is not writeable');
         }
 
