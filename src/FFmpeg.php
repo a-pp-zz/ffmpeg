@@ -1129,12 +1129,10 @@ class FFmpeg
             throw new FFmpegException ('Input file not exists');
         }
 
-        if ( ! empty ($this->_output)) {
-            $output_dir = pathinfo ($this->_output, PATHINFO_DIRNAME);
-        }
+        $output_dir = $this->get('output_dir');
 
-        if (empty ($output_dir)) {
-            $output_dir = $this->get('output_dir');
+        if ( ! empty ($this->_output) and empty ($output_dir)) {
+            $output_dir = pathinfo ($this->_output, PATHINFO_DIRNAME);
         }
 
         if (empty ($output_dir)) {
