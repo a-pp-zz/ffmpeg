@@ -1314,51 +1314,72 @@ class FFmpeg
 
     /**
      * set size and scale params
-     * @param boolean $dar [description]
+     * @param mixed $height [description]
      */
-    private function _set_size($width, $dar = TRUE)
+    private function _set_size($width, $height = FALSE)
     {
-        if (!$width) {
-            return $this;
-        }
-
-        if ($dar === FALSE) {
-            $this->_params['scale'] = sprintf('%d:-1', $width);
-
+        if ( ! $width) {
             return $this;
         }
 
         $width_meta = (int)Arr::get($this->_metadata, 'width', 0);
         $height_meta = (int)Arr::get($this->_metadata, 'height', 0);
+        $is_vertical = (int)Arr::get($this->_metadata, 'is_vertical', 0);
 
         if (!$width_meta or !$height_meta) {
             throw new FFmpegException('Can\'t get video dimensions from metadata! No video stream?');
         }
 
-        $dar = Arr::get($this->_metadata, 'dar_num');
+        if (is_numeric($height) and intval($height) > 0) {
+            $this->_params['scale'] = sprintf('%d:-1', $width);
+            $this->_params['size']  = sprintf('%dx%d', $width, $height);
 
-        if (!$dar) {
-            $dar = $width_meta / $height_meta;
-        }
+            if ($is_vertical) {
+                $this->_params['size']  = sprintf('%dx%d', $height, $width);
+                $this->_params['scale'] = sprintf('%d:%d', $height, $width);
+            }
+        } elseif ($height === TRUE) {
 
-        $size = NULL;
+            $dar = Arr::get($this->_metadata, 'dar_num');
 
-        if ($width == 1280 and $width_meta >= $width) {
-            $size = 'hd720';
-        } elseif ($width == 1920 and $width_meta >= $width) {
-            $size = 'hd1080';
-        } elseif ($dar) {
-            $width = min([$width, $width_meta]);
-            $height = intval($width / $dar);
-
-            if ($height % 2 !== 0) {
-                $height++;
+            if (!$dar) {
+                $dar = $width_meta / $height_meta;
             }
 
-            $size = sprintf('%dx%d', $width, $height);
-        }
+            $size = NULL;
 
-        $this->_params['size'] = $this->_params['scale'] = $size;
+            if ($width_meta >= $width) {
+                switch ($width):
+                    case 1920:
+                        $size = 'hd1080';
+                        $height = 1080;
+                    break;
+                    case 1280:
+                        $size = 'hd720';
+                        $height = 720;
+                    break;
+                endswitch;
+            }
+
+            if (empty ($size) and $dar) {
+                $width = min([$width, $width_meta]);
+                $height = intval($width / $dar);
+
+                if ($height % 2 !== 0) {
+                    $height++;
+                }
+
+                $size = sprintf('%dx%d', $width, $height);
+            }
+
+            if ($is_vertical) {
+                $size = sprintf('%dx%d', $height, $width);
+            }
+
+            $this->_params['size'] = $this->_params['scale'] = $size;
+        } else {
+            $this->_params['scale'] = sprintf('%d:-1', $width);
+        }
 
         return $this;
     }
